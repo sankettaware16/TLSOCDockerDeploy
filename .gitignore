@@ -1,0 +1,14 @@
+# Environment variables
+.env
+
+# TLS generated certs (runtime only)
+certs/**/*
+!certs/generate-certs.sh
+
+# Docker data
+esdata
+*.log
+
+# Editor / OS junk
+.vscode/
+.DS_Store

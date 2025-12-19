@@ -24,7 +24,9 @@ All internal communication is TLS-encrypted using a **locally generated CA**.
 ##  Prerequisites (Fresh Ubuntu)
 
 ###  Update system
+```bash
 sudo apt update && sudo apt upgrade -y
+
 sudo apt install -y \
   ca-certificates \
   curl \
@@ -33,7 +35,8 @@ sudo apt install -y \
   git \
   openssl
 
-  ### Install Docker and Docker Compose 
+
+### Install Docker and Docker Compose 
   curl -fsSL https://get.docker.com | sudo bash
 sudo systemctl enable docker
 sudo systemctl start docker

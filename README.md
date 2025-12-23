@@ -112,3 +112,9 @@ docker logs logstash -f
 docker logs elasticsearch -f
 docker logs kafka -f
 ```
+
+### ACCESS KIBANA FROM WEB
+```bash
+https://<ip-addr>:5601/
+
+```

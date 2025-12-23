@@ -56,9 +56,10 @@ sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 cd /opt
 sudo git clone https://github.com/sankettaware16/TLSOCDockerDeploy.git
 cd TLSOCDockerDeploy
-./cert/generate-certs.sh <ip server>
+./certs/generate-certs.sh <ip server>
 
 sudo cp .env.example .env
+nano .env  #update the ip
 sudo chmod +x install.sh
 sudo ./install.sh
 
@@ -75,7 +76,7 @@ docker exec -it elasticsearch \
   -u kibana_system \
   --url https://elasticsearch:9200 \
   -E xpack.security.http.ssl.verification_mode=certificate
-
+#--------FOR ELASTIC----------------
 docker exec -it elasticsearch \
   /usr/share/elasticsearch/bin/elasticsearch-reset-password \
   -u elastic \
@@ -83,6 +84,9 @@ docker exec -it elasticsearch \
   -E xpack.security.http.ssl.verification_mode=certificate
 
 #copy the pass into env for both elastic and kibana_system
+it will look like
+Password for the [kibana_system] user successfully reset.
+New value: randompass
 ```
 ### ADDING PASSWORD TO ENVIRONMENT
 ```bash

@@ -34,6 +34,7 @@ services:
       - SERVER_SSL_ENABLED=true
       - SERVER_SSL_CERTIFICATE=/usr/share/kibana/config/certs/kibana.crt
       - SERVER_SSL_KEY=/usr/share/kibana/config/certs/kibana.key
+      - KIBANA_DEFAULTROUTE=/s/tlsoc/app/discover
       - ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES=/usr/share/kibana/config/certs/ca.crt
     volumes:
       - ./certs/kibana:/usr/share/kibana/config/certs

@@ -1,0 +1,8 @@
+- pipeline.id: logs
+
+  path.config: "/usr/share/logstash/pipeline/all.conf"
+
+#- pipeline.id: alerts
+
+#  path.config: "/usr/share/logstash/pipeline/alerts.conf"
+

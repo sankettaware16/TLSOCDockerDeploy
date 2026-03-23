@@ -119,6 +119,7 @@ https://<ip-addr>:5601/
 
 ```
 ### Onboarding Log Sources (Agentless Forwarding via rsyslog + omkafka)
+
 This stack uses an agentless model: Linux servers forward logs directly using rsyslog + omkafka module → Kafka topic → Logstash → Elasticsearch.
 
 Steps to Onboard Any Ubuntu/Linux Server

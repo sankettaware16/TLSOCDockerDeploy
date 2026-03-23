@@ -197,7 +197,7 @@ input(type="imfile"
 if $programname == 'web_tomcat_logs' then {    # ← Update to match your Tag
   action(
     type="omkafka"
-    topic="cse_logs"                # CHANGE THIS → your Kafka topic name
+    topic="cse_logs"                # CHANGE THIS → your Kafka topic_name
     broker=["<IP-TLSOC>:9094"]   # ← Usually kept as-is (your central Kafka broker IP:port)
     key="%programname%"
     template="KafkaProxyEnvelope"
@@ -213,13 +213,17 @@ if $programname == 'web_tomcat_logs' then {    # ← Update to match your Tag
   stop
 }
 
-############################################################
-# FINAL STEP
-############################################################
-# Save file → Restart rsyslog:
-sudo systemctl restart rsyslog
-
-# Verify forwarding:
-#   sudo journalctl -u rsyslog -f    (look for errors)
-############################################################
 ```
+# Save file → Restart rsyslog:
+```
+sudo systemctl restart rsyslog
+sudo journalctl -u rsyslog -f    (look for errors)
+```
+
+### Confirming logs are recvied by kafka
+on TLSOCDOCKER machine 
+```
+cd /opt/TLSOCDockerDeploy/
+sudo docker exec -it kafka   /opt/kafka/bin/kafka-console-consumer.sh   --bootstrap-server kafka:9092   --topic topic_name(eg: cse_logs)
+```
+Real-time logs will be received

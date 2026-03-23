@@ -118,3 +118,107 @@ docker logs kafka -f
 https://<ip-addr>:5601/
 
 ```
+### Onboarding Log Sources (Agentless Forwarding via rsyslog + omkafka)
+This stack uses an agentless model: Linux servers forward logs directly using rsyslog + omkafka module → Kafka topic → Logstash → Elasticsearch.
+
+Steps to Onboard Any Ubuntu/Linux Server
+Install the omkafka module (one-time per source server)
+```bash
+sudo apt update
+sudo apt install -y rsyslog-kafka
+
+```
+Create the forwarding config file
+Create /etc/rsyslog.d/tlsoc_logfwd.conf and paste the template below.
+Template (copy-paste this entire block):
+```bash
+############################################################
+# Server → KAFKA (TLSOC) Log Forwarding Configuration
+# File Location  : /etc/rsyslog.d/tlsoc_logfwd.conf
+# After changes  : sudo systemctl restart rsyslog
+############################################################
+
+#############################
+# LOAD REQUIRED MODULES
+#############################
+module(load="imfile")     # Required to read log files
+module(load="omkafka")    # Required to forward logs to Kafka
+
+#############################
+# KAFKA MESSAGE TEMPLATE
+#############################
+# Modify ONLY the values marked as CHANGE REQUIRED
+
+template(name="KafkaProxyEnvelope" type="list") {
+  constant(value="{\"meta\":{")
+  
+    constant(value="\"org\":\"xyz_university\",")        # CHANGE IF REQUIRED 
+    constant(value="\"dept\":\"cse\",")        # CHANGE REQUIRED
+    constant(value="\"env\":\"production\",")  # CHANGE REQUIRED (development/testing/prod)
+    constant(value="\"server\":\"cse_web_server_1\",")  # CHANGE REQUIRED (unique server identifier)
+
+    constant(value="\"source_host\":\"")
+      property(name="hostname")
+    constant(value="\",")
+    constant(value="\"source_program\":\"")
+      property(name="programname")
+    constant(value="\"")
+
+  constant(value="},\"raw\":\"")
+    property(name="msg" format="json")
+  constant(value="\"}\n")
+}
+
+#############################
+# LOG INPUT CONFIGURATION
+#############################
+# UPDATE the File path and Tag
+
+input(type="imfile"
+      File="/location/of/logs/tomcat.log"   # CHANGE REQUIRED → actual full path to log file
+      Tag="web_tomcat_logs"                 # CHANGE REQUIRED → unique tag for this source
+      Severity="info"
+      Facility="local4")
+
+# Example: Add more inputs as needed (nginx, auth, etc.)
+#input(type="imfile"
+#      File="/var/log/nginx/access.log"
+#      Tag="nginx_access"
+#      Severity="info"
+#      Facility="local4")
+
+#############################
+# KAFKA FORWARDING RULE
+#############################
+
+# $programname must match the Tag from input section above
+
+if $programname == 'web_tomcat_logs' then {    # ← Update to match your Tag
+  action(
+    type="omkafka"
+    topic="cse_logs"                # CHANGE THIS → your Kafka topic name
+    broker=["<IP-TLSOC>:9094"]   # ← Usually kept as-is (your central Kafka broker IP:port)
+    key="%programname%"
+    template="KafkaProxyEnvelope"
+
+    confParam=[
+      "compression.codec=snappy",
+      "linger.ms=50",
+      "batch.num.messages=1000"
+    ]
+
+    action.resumeRetryCount="-1"
+  )
+  stop
+}
+
+############################################################
+# FINAL STEP
+############################################################
+# Save file → Restart rsyslog:
+sudo systemctl restart rsyslog
+
+# Verify forwarding:
+#   sudo journalctl -u rsyslog -f    (look for errors)
+############################################################
+```

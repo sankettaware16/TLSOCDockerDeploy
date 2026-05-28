@@ -1,229 +1,124 @@
-# TLSOCDockerDeploy 
-**One-Click TLS-Enabled SOC Stack (Kafka + Logstash + Elasticsearch + Kibana)**
+# TLSOC Log Parser Stack
 
-This repository provides a **plug-and-play, TLS-secured SOC deployment** using Docker Compose.  
-It is designed for **fresh Ubuntu servers**
+Welcome to the **TLSOC** repository. This project contains an integrated, containerized version of the FOSS SOC Engine and ELK Stack (Elasticsearch, Logstash, Kibana) tailored for security log collection, parsing, normalisation, and threat detection.
 
 ---
 
-##  Architecture
-Logs → Kafka → Logstash → Elasticsearch → Kibana
+## Deployment & Setup Guide (Step-by-Step)
 
+Follow these steps in order to set up your environment, launch the services, and manually configure the Kibana visualization dashboards and SIEM detection rules.
 
-All internal communication is TLS-encrypted using a **locally generated CA**.
+### Phase 1: Prerequisites & Host Preparation
+
+Before launching the containers, ensure your machine is ready:
+1. **Docker Desktop (Windows/Mac)**: Ensure Docker Desktop is installed and running (verify the status is "Engine Running" / green).
+2. **WSL 2 (Windows)**: Ensure WSL2 is installed and set as your Docker backend for optimal performance.
+3. **Linux Host Memory Configuration (Ubuntu/Debian)**: Elasticsearch requires a large virtual memory map count. Run this in your host terminal to prevent instant crash:
+   ```bash
+   sudo sysctl -w vm.max_map_count=262144
+   ```
+   *(To persist across system reboots, add `vm.max_map_count=262144` to your `/etc/sysctl.conf`)*
 
 ---
 
-##  Supported OS
+### Phase 2: Configuration Setup
 
-- Ubuntu **20.04 / 22.04 / 24.04**
-- Fresh VM or bare-metal recommended
+#### 1. Environment variables (`.env`)
+In the root directory, open or create a `.env` file:
+```env
+ELASTIC_VERSION=8.19.12
+ELASTIC_PASSWORD=YourSecureElasticPassword
+KIBANA_PASSWORD=YourSecureKibanaSystemPassword
+HOST_IP= 127.0.0.1  # Change this to your host's local IP address
+
+
+#### 2. Engine Configuration
+Open `engine/config.yaml` to configure the engine connection details:
+- **`bootstrap_servers`**: Ensure this points to your Kafka broker (e.g., `["kafka:9092"]` for local or `["192.168.10.62:9094"]` for production).
+- **`group_id`**: Update this to a unique identifier if multiple developers are consuming from the same production Kafka server simultaneously to prevent offset conflict.
 
 ---
 
-##  Prerequisites (Fresh Ubuntu)
+### Phase 3: Launching the Stack
 
-###  Update system
+#### Step 1: Generate TLS Certificates
+Elasticsearch requires self-signed certificates. Run the generation script from the root directory:
 ```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y \
-  ca-certificates \
-  curl \
-  gnupg \
-  lsb-release \
-  git \
-  openssl
+bash certs/generate-certs.sh
 ```
+This generates the required TLS credentials inside the `./certs` folder.
 
-### Install Docker and Docker Compose
-
+#### Step 2: Deploy Containers
+Build and boot the services in the background:
 ```bash
-curl -fsSL https://get.docker.com | sudo bash
-sudo systemctl enable docker
-sudo systemctl start docker
-sudo systemctl enable docker
-docker --version
-
-
-sudo mkdir -p /usr/local/lib/docker/cli-plugins
-sudo curl -SL https://github.com/docker/compose/releases/download/v2.25.0/docker-compose-linux-x86_64 \
-  -o /usr/local/lib/docker/cli-plugins/docker-compose
-sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-
+docker compose up -d --build
 ```
-## Installation
+> [!NOTE]
+> The `--build` flag is required on the first deploy to compile the custom Python engine image and GeoIP dependencies.
+
+Verify all containers are up and running:
 ```bash
-cd /opt
-sudo git clone https://github.com/sankettaware16/TLSOCDockerDeploy.git
-cd TLSOCDockerDeploy
-./certs/generate-certs.sh <ip server>
-
-sudo cp .env.example .env
-nano .env  #update the ip
-sudo chmod +x install.sh
-sudo ./install.sh
-
+docker compose ps
 ```
 
-## IMPORTANT: First-Time Password Fix (Mandatory)
+Wait **2-3 minutes** for Elasticsearch and Kibana to initialize completely.
 
-On first run, Kibana may fail authentication with Elasticsearch.
-```bash
-#--------FOR KIBANA----------------
+---
 
-docker exec -it elasticsearch \
-  /usr/share/elasticsearch/bin/elasticsearch-reset-password \
-  -u kibana_system \
-  --url https://elasticsearch:9200 \
-  -E xpack.security.http.ssl.verification_mode=certificate
-#--------FOR ELASTIC----------------
-docker exec -it elasticsearch \
-  /usr/share/elasticsearch/bin/elasticsearch-reset-password \
-  -u elastic \
-  --url https://elasticsearch:9200 \
-  -E xpack.security.http.ssl.verification_mode=certificate
+### Phase 4: Manual Kibana Space & Saved Objects Setup
 
-#copy the pass into env for both elastic and kibana_system
-it will look like
-Password for the [kibana_system] user successfully reset.
-New value: randompass
-```
-### ADDING PASSWORD TO ENVIRONMENT
-```bash
-sudo nano .env
-```
-change the password which you get from the above code
-for both elastic and kibana
-```bash
-ELASTIC_PASSWORD=ChangeThisElasticPassword
-KIBANA_PASSWORD=ChangeThisKibanaPassword
-```
-## RESTART STACK
-```bash
-docker compose down
-docker compose up -d
-docker ps
-```
+Once Kibana is running, open your web browser and navigate to `https://localhost:5601`. Log in using the username `elastic` and the password you defined in `.env`.
 
-to check logs for each component
-```bash
-docker logs kibana -f
-docker logs logstash -f
-docker logs elasticsearch -f
-docker logs kafka -f
-```
+Follow these manual steps to configure the custom TLSOC Space:
 
-### ACCESS KIBANA FROM WEB
-```bash
-https://<ip-addr>:5601/
+#### 1. Create the TLSOC Space
+1. Go to **Stack Management** (bottom left gear icon).
+2. Under Kibana, click on **Spaces**.
+3. Click the **Create a space** button in the top right.
+4. Fill in the following exact details:
+   - **Name:** `TLSOC`
+   - **URL identifier:** `tlsoc` (This must be exactly `tlsoc`)
+   - **Avatar Image**: Select the Image tab and upload your `logo.png` from the `setup/` folder.
+   - **Background color:** `#6092C0`
+5. *(Optional)* Under **Features**, you can click the **Solution view** dropdown and select **Security** to automatically hide irrelevant Kibana menus.
+6. Click **Create space**.
 
-```
-### Onboarding Log Sources (Agentless Forwarding via rsyslog + omkafka)
+> [!IMPORTANT]
+> **Switch to your new Space!** Before proceeding to the next steps, click the avatar icon in the absolute top-left corner of Kibana and switch your current environment from `Default` to `TLSOC`. If you don't do this, you will accidentally import everything into the wrong space.
 
-This stack uses an agentless model: Linux servers forward logs directly using rsyslog + omkafka module → Kafka topic → Logstash → Elasticsearch.
+#### 2. Manually Inject Required Data Views
+The SIEM rules and Dashboards are hardcoded to look for Data Views with specific internal UUIDs. You must inject them manually:
+1. Navigate to **Stack Management** -> **Data Views**.
+2. Click **Create data view**.
+   - **Name:** `SIEM Rule View 1`
+   - **Index pattern:** `fosstlsoc-logs-*`
+3. Click **Show advanced settings** at the bottom.
+4. **Data view ID:** Paste `4ea16e42-92a0-4495-a6c1-a1848eb235f6`
+5. Click **Save data view to Kibana**.
 
-Steps to Onboard Any Ubuntu/Linux Server
-Install the omkafka module (one-time per source server)
-```bash
-sudo apt update
-sudo apt install -y rsyslog-kafka
+Repeat the process for the second required view:
+1. Click **Create data view** again.
+   - **Name:** `SIEM Rule View 2`
+   - **Index pattern:** `fosstlsoc-logs-*`
+2. **Data view ID:** Paste `60b3f25a-9745-44fb-95c8-f1b5e8c5b3c8`
+3. Click **Save data view to Kibana**.
 
-```
-Create the forwarding config file
-Create /etc/rsyslog.d/tlsoc_logfwd.conf and paste the template below.
-Template (copy-paste this entire block):
-```bash
-############################################################
-# Server → KAFKA (TLSOC) Log Forwarding Configuration
-# File Location  : /etc/rsyslog.d/tlsoc_logfwd.conf
-# After changes  : sudo systemctl restart rsyslog
-############################################################
+#### 3. Import Dashboards & Saved Objects
+1. Navigate to **Stack Management** -> **Saved Objects**.
+2. Click **Import** in the top right corner.
+3. Select your `setup/dashboards.ndjson` file.
+4. Toggle the **Automatically overwrite all saved objects** switch to ON.
+5. Click **Import**.
+6. You should see a success message indicating 17 objects were imported.
 
-#############################
-# LOAD REQUIRED MODULES
-#############################
-module(load="imfile")     # Required to read log files
-module(load="omkafka")    # Required to forward logs to Kafka
+#### 4. Import SIEM Detection Rules
+1. Navigate to the **Security** app from the main left-hand menu.
+2. Under the Security menu, go to **Manage** -> **Rules**.
+3. Click the **Import rules** button.
+4. Select your `setup/rules.ndjson` file.
+5. Ensure the **Overwrite existing rules** checkbox is selected.
+6. Click **Import**.
+7. You should see a success message indicating 20 rules were imported.
 
-#############################
-# KAFKA MESSAGE TEMPLATE
-#############################
-# Modify ONLY the values marked as CHANGE REQUIRED
-
-template(name="KafkaProxyEnvelope" type="list") {
-  constant(value="{\"meta\":{")
-  
-    constant(value="\"org\":\"xyz_university\",")        # CHANGE IF REQUIRED 
-    constant(value="\"dept\":\"cse\",")        # CHANGE REQUIRED
-    constant(value="\"env\":\"production\",")  # CHANGE REQUIRED (development/testing/prod)
-    constant(value="\"server\":\"cse_web_server_1\",")  # CHANGE REQUIRED (unique server identifier)
-
-    constant(value="\"source_host\":\"")
-      property(name="hostname")
-    constant(value="\",")
-    constant(value="\"source_program\":\"")
-      property(name="programname")
-    constant(value="\"")
-
-  constant(value="},\"raw\":\"")
-    property(name="msg" format="json")
-  constant(value="\"}\n")
-}
-
-#############################
-# LOG INPUT CONFIGURATION
-#############################
-# UPDATE the File path and Tag
-
-input(type="imfile"
-      File="/location/of/logs/tomcat.log"   # CHANGE REQUIRED → actual full path to log file
-      Tag="web_tomcat_logs"                 # CHANGE REQUIRED → unique tag for this source
-      Severity="info"
-      Facility="local4")
-
-# Example: Add more inputs as needed (nginx, auth, etc.)
-#input(type="imfile"
-#      File="/var/log/nginx/access.log"
-#      Tag="nginx_access"
-#      Severity="info"
-#      Facility="local4")
-
-#############################
-# KAFKA FORWARDING RULE
-#############################
-
-# $programname must match the Tag from input section above
-
-if $programname == 'web_tomcat_logs' then {    # ← Update to match your Tag
-  action(
-    type="omkafka"
-    topic="cse_logs"                # CHANGE THIS → your Kafka topic_name
-    broker=["<IP-TLSOC>:9094"]   # ← Usually kept as-is (your central Kafka broker IP:port)
-    key="%programname%"
-    template="KafkaProxyEnvelope"
-
-    confParam=[
-      "compression.codec=snappy",
-      "linger.ms=50",
-      "batch.num.messages=1000"
-    ]
-
-    action.resumeRetryCount="-1"
-  )
-  stop
-}
-
-```
-# Save file → Restart rsyslog:
-```
-sudo systemctl restart rsyslog
-sudo journalctl -u rsyslog -f    (look for errors)
-```
-
-### Confirming logs are recvied by kafka
-on TLSOCDOCKER machine 
-```
-cd /opt/TLSOCDockerDeploy/
-sudo docker exec -it kafka   /opt/kafka/bin/kafka-console-consumer.sh   --bootstrap-server kafka:9092   --topic topic_name(eg: cse_logs)
-```
-Real-time logs will be received
+> [!TIP]
+> After importing, some rules may throw "Unknown column" verification exceptions for a few minutes. This is normal behavior when Elasticsearch is mapping a brand-new database and will automatically resolve itself as real logs start flowing into the system.

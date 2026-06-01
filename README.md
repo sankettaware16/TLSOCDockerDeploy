@@ -227,3 +227,38 @@ cd /opt/TLSOCDockerDeploy/
 sudo docker exec -it kafka   /opt/kafka/bin/kafka-console-consumer.sh   --bootstrap-server kafka:9092   --topic topic_name(eg: cse_logs)
 ```
 Real-time logs will be received
+
+### Required configuration 
+
+The following components must be configured before deployment:
+
+- Kafka server certificates
+- CA certificate
+- Kafka keystore and truststore
+- SASL/SCRAM user credentials
+- Producer configuration updates
+- Certificate Generation
+
+A Certificate authority should be created to sign Kafka server certificates.
+
+Required artifacts:
+
+ca.crt — Distributed to producers and consumers
+kafka.keystore.jks — Kafka server certificate and private key
+kafka.truststore.jks — Trusted CA certificates
+
+SASL Credential Management
+
+We shoudl create a dedicated Kafka user for each deployment or institution. Each user should be assigned a strong randomly generated password and configured using Kafka SCRAM authentication.
+
+All Kafka producers must also be updated to use authenticated TLS communication.
+
+Example rsyslog parameters:
+
+```
+security.protocol=SASL_SSL
+sasl.mechanism=SCRAM-SHA-512
+sasl.username=<deployment_user>
+sasl.password=<deployment_password>
+ssl.ca.location=/etc/tlsoc/ca.crt
+```

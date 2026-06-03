@@ -7,14 +7,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from utils.geoip import GeoIPClient
 
-# Initialize Redis connection
-# CHANGED FOR CONTAINERISATION:
-# In Docker/Kubernetes, Redis runs as a separate container and is reachable
-# by its service name (e.g. 'redis'), NOT 'localhost'.
-# os.environ.get('REDIS_HOST', 'localhost') means:
-#   - If REDIS_HOST environment variable is set → use it (e.g. 'redis' in Docker)
-#   - If not set → fall back to 'localhost' (for bare-metal / dev use)
-# The docker-compose.yml sets REDIS_HOST=redis so containers find each other.
+# Initialize Redis connection (uses 'redis' hostname inside Docker, falls back to 'localhost')
 r = redis.Redis(
     host=os.environ.get('REDIS_HOST', 'localhost'),
     port=int(os.environ.get('REDIS_PORT', 6379)),

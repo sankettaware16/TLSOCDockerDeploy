@@ -1,16 +1,7 @@
-# ─────────────────────────────────────────────────────────────
-# STAGE 1: Base image
-# ─────────────────────────────────────────────────────────────
-# We use python:3.11-slim — the official Python image but stripped
-# down to only what Python needs. This keeps the final container
-# small (~150MB instead of ~900MB for the full image).
+# Base Python image
 FROM python:3.11-slim
 
-# ─────────────────────────────────────────────────────────────
-# STAGE 2: System-level dependencies
-# ─────────────────────────────────────────────────────────────
-# We need gcc and libmaxminddb-dev to compile the geoip2 C extension for fast performance.
-# ca-certificates is needed for secure HTTPS downloads.
+# Install system dependencies needed for compilation and GeoIP support
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         gcc \
@@ -22,49 +13,31 @@ RUN apt-get update \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# ─────────────────────────────────────────────────────────────
-# STAGE 3: Non-root user for security
-# ─────────────────────────────────────────────────────────────
-# Running containers as root is a major security vulnerability. 
-# We create a specific appuser with UID 1001 to run the engine.
+# Run as non-root user for security
 RUN groupadd --gid 1001 appuser \
     && useradd --uid 1001 --gid appuser --shell /bin/bash --create-home appuser
 
-# ─────────────────────────────────────────────────────────────
-# STAGE 4: Set the working directory inside the container
-# ─────────────────────────────────────────────────────────────
+# Set working directory
 WORKDIR /app
 
-# ─────────────────────────────────────────────────────────────
-# STAGE 5: Install Python dependencies
-# ─────────────────────────────────────────────────────────────
-# We copy requirements.txt FIRST to take advantage of Docker layer caching.
-# pip install with --no-cache-dir tells pip NOT to save download cache.
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ─────────────────────────────────────────────────────────────
-# STAGE 6: Copy all engine source code
-# ─────────────────────────────────────────────────────────────
+# Copy engine source code
 COPY main.py        .
 COPY config.yaml    .
 COPY core/          ./core/
 COPY utils/         ./utils/
 COPY rules/         ./rules/
 
-# ─────────────────────────────────────────────────────────────
-# STAGE 7: Create required runtime directories
-# ─────────────────────────────────────────────────────────────
-# The engine needs logs/ and database/ to exist.
-# We also create /var/log/soc_output and chown it to appuser so the engine can write there.
+# Create required runtime directories and set ownership
 RUN mkdir -p logs database \
     && mkdir -p /var/log/soc_output \
     && chown -R appuser:appuser /app \
     && chown appuser:appuser /var/log/soc_output
 
-# ─────────────────────────────────────────────────────────────
-# STAGE 8: GeoIP Database (Optional Build Arg)
-# ─────────────────────────────────────────────────────────────
+# Download GeoIP database if license key is provided
 ARG MAXMIND_LICENSE_KEY=""
 RUN if [ -n "$MAXMIND_LICENSE_KEY" ]; then \
       echo "[+] Downloading GeoIP database..." && \
@@ -79,17 +52,13 @@ RUN if [ -n "$MAXMIND_LICENSE_KEY" ]; then \
       echo "[!] No MaxMind key provided — GeoIP enrichment will be disabled" ; \
     fi
 
-# ─────────────────────────────────────────────────────────────
-# STAGE 9: Switch to non-root and set Environment Variables
-# ─────────────────────────────────────────────────────────────
+# Switch to non-root and set Environment Variables
 USER appuser
 
-# PYTHONUNBUFFERED=1 ensures real-time logs without buffering delays in 'docker logs'
+# Disable output buffering for real-time container logs
 ENV PYTHONUNBUFFERED=1
 ENV REDIS_HOST=redis
 ENV REDIS_PORT=6379
 
-# ─────────────────────────────────────────────────────────────
-# STAGE 10: Start the engine
-# ─────────────────────────────────────────────────────────────
+# Start the engine
 ENTRYPOINT ["python3", "main.py"]

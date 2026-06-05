@@ -29,7 +29,7 @@ In the root directory, open or create a `.env` file:
 ELASTIC_VERSION=8.19.12
 ELASTIC_PASSWORD=YourSecureElasticPassword
 KIBANA_PASSWORD=YourSecureKibanaSystemPassword
-HOST_IP= 127.0.0.1  # Change this to your host's local IP address
+HOST_IP=127.0.0.1 # Change this to your host's local IP address
 
 
 #### 2. Engine Configuration

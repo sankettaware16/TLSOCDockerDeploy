@@ -1,11 +1,11 @@
 kafka:
   # Kafka connection settings
-  bootstrap_servers: ["192.168.10.57:9094"]
+  bootstrap_servers: ["localhost:9092"]
 
   # Kafka topic subscription (supports regex patterns)
   input_topic: "^(webserver|vulnerability|mailserver|proxyserver|summersoc|.*)$"
 
-  group_id: "aryan-windows"
+  group_id: "soc-parser-group"
   auto_offset_reset: "latest"
 
 batch:

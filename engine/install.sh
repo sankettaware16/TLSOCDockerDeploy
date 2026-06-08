@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # FOSS SOC Engine - Installation Script
-#!/bin/bash
 set -e
 
 echo "[+] Installing Python dependencies"

@@ -26,15 +26,17 @@ Before launching the containers, ensure your machine is ready:
 #### 1. Environment variables (`.env`)
 In the root directory, open or create a `.env` file:
 ```env
-ELASTIC_VERSION=8.19.12
+ELASTIC_VERSION=8.12.2
 ELASTIC_PASSWORD=YourSecureElasticPassword
 KIBANA_PASSWORD=YourSecureKibanaSystemPassword
-HOST_IP=127.0.0.1 # Change this to your host's local IP address
-
+ELASTIC_HEAP=1g
+KIBANA_PORT=5601
+HOST_IP=127.0.0.1
+```
 
 #### 2. Engine Configuration
 Open `engine/config.yaml` to configure the engine connection details:
-- **`bootstrap_servers`**: Ensure this points to your Kafka broker (e.g., `["kafka:9092"]` for local or `["192.168.10.62:9094"]` for production).
+- **`bootstrap_servers`**: Ensure this points to your Kafka broker (e.g., `["kafka:9092"]` for local).
 - **`group_id`**: Update this to a unique identifier if multiple developers are consuming from the same production Kafka server simultaneously to prevent offset conflict.
 
 ---

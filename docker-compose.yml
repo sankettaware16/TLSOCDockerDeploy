@@ -1,15 +1,20 @@
+# =============================================================================
+# TLSOC Container Stack
+# Log Flow: Syslogs -> Kafka -> FOSS SOC Engine -> Shared Volume -> Logstash -> ES -> Kibana
+# =============================================================================
 
 services:
 
+  # Elasticsearch: Database storing all parsed log events
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}
     container_name: elasticsearch
     environment:
       - discovery.type=single-node
+      # Locks JVM memory to RAM to prevent slow disk-swapping
       - bootstrap.memory_lock=true
       - ES_JAVA_OPTS=-Xms${ELASTIC_HEAP} -Xmx${ELASTIC_HEAP}
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
-
       - xpack.security.enabled=true
       - xpack.security.http.ssl.enabled=true
       - xpack.security.http.ssl.key=/usr/share/elasticsearch/config/certs/elasticsearch.key
@@ -18,10 +23,14 @@ services:
     volumes:
       - ./certs/elasticsearch:/usr/share/elasticsearch/config/certs
       - ./certs/ca/ca.crt:/usr/share/elasticsearch/config/certs/ca.crt
-      - esdata:/usr/share/elasticsearch/data
+      - esdata:/usr/share/elasticsearch/data # Persists indexed logs across restarts
     ports:
       - "9200:9200"
+    ulimits:
+      # Memory lock limit (Required for ES bootstrap memory lock to work)
+      memlock: -1
 
+  # Kibana: Dashboard UI to search logs and view SIEM rules
   kibana:
     image: docker.elastic.co/kibana/kibana:${ELASTIC_VERSION}
     container_name: kibana
@@ -31,7 +40,6 @@ services:
       - ELASTICSEARCH_HOSTS=https://elasticsearch:9200
       - ELASTICSEARCH_USERNAME=kibana_system
       - ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD}
-
       - SERVER_SSL_ENABLED=true
       - SERVER_SSL_CERTIFICATE=/usr/share/kibana/config/certs/kibana.crt
       - SERVER_SSL_KEY=/usr/share/kibana/config/certs/kibana.key
@@ -42,28 +50,68 @@ services:
       - ./certs/ca/ca.crt:/usr/share/kibana/config/certs/ca.crt
     ports:
       - "${KIBANA_PORT}:5601"
+
+  # Kafka: Message queue buffering all incoming logs from rsyslog
   kafka:
-    #image: apache/kafka:latest
     image: apache/kafka:4.0.0
     container_name: kafka
-
     environment:
       - KAFKA_NODE_ID=1
+      # KRaft mode runs Kafka without Zookeeper
       - KAFKA_PROCESS_ROLES=broker,controller
       - KAFKA_LISTENERS=INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9094,CONTROLLER://0.0.0.0:9093
+      # Internal traffic uses kafka:9092, external syslog use Host IP on 9094
       - KAFKA_ADVERTISED_LISTENERS=INTERNAL://kafka:9092,EXTERNAL://${HOST_IP}:9094
       - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
       - KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL
       - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
       - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
-
       - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
       - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
       - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
-
     ports:
-      - "9094:9094"   # EXTERNAL ONLY
+      - "9094:9094"
 
+  # Redis: Cache used by the engine to correlate multi-line log events (e.g. Postfix logs)
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # FOSS SOC Engine: Python engine that parses logs and outputs JSON files
+  foss-soc-engine:
+    build:
+      context: ./engine
+      args:
+        MAXMIND_LICENSE_KEY: ${MAXMIND_LICENSE_KEY:-}
+    container_name: foss-soc-engine
+    restart: always
+    depends_on:
+      - kafka
+      - redis
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    healthcheck:
+      test: >
+        sh -c 'test -f /app/logs/stats.json &&
+        test $$(( $$(date +%s) - $$(date +%s -r /app/logs/stats.json) )) -lt 120'
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    volumes:
+      # Shared output volume where the engine writes parsed JSON logs
+      - parser_output:/var/log/soc_output
+      - foss-engine-logs:/app/logs
+
+  # Logstash: Reads parsed JSON logs from shared volume and sends them to Elasticsearch
   logstash:
     image: docker.elastic.co/logstash/logstash:${ELASTIC_VERSION}
     container_name: logstash
@@ -74,13 +122,14 @@ services:
       - ./logstash/pipeline:/usr/share/logstash/pipeline
       - ./certs/logstash:/usr/share/logstash/config/certs
       - ./certs/ca/ca.crt:/usr/share/logstash/config/certs/ca.crt
-
-      - /etc/parser_service/output:/parser_output:ro
+      # Mount shared output volume as read-only
+      - parser_output:/parser_output:ro
       - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml
       - ./logstash/config/pipelines.yml:/usr/share/logstash/config/pipelines.yml
-
     environment:
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
 
 volumes:
-  esdata:
+  esdata:             # Stores Elasticsearch data
+  parser_output:      # Shared directory for parsed logs
+  foss-engine-logs:   # Stores engine log outputs

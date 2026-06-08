@@ -1,0 +1,44 @@
+kafka:
+  # Kafka connection settings
+  bootstrap_servers: ["localhost:9092"]
+
+  # Kafka topic subscription (supports regex patterns)
+  input_topic: "^(webserver|vulnerability|mailserver|proxyserver|summersoc|.*)$"
+
+  group_id: "soc-parser-group"
+  auto_offset_reset: "latest"
+
+batch:
+  # Flush batch settings (by count or timeout)
+  size: 1000
+  timeout_sec: 5
+
+paths:
+  # Output directory for parsed JSON logs
+  output_dir: "/var/log/soc_output/"
+  # Rules folder location
+  rules_dir: "rules/"
+
+program_mapping:
+  # Maps raw log program names to rules files
+  waf_auth: "linux_auth"
+  mail_auth: "linux_auth"
+  web_auth: "linux_auth"
+  summersoc_auth_logs: "linux_auth"
+  
+  # Web access logs
+  waf-nginx-access: "apache_access"
+  mail_apache_access: "apache_access"     
+  web_apache_access: "apache_access"      
+
+  # WAF logs
+  modsec_audit_log: "modsec"
+
+  # Mail services logs
+  postfix: "postfix"
+  roundcube_login: "roundcube"
+
+geoip:
+  enabled: true
+  # GeoLite2 City database path
+  db_path: "database/GeoLite2-City.mmdb"

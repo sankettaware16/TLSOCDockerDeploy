@@ -122,6 +122,46 @@ https://<ip-addr>:5601/
 
 This stack uses an agentless model: Linux servers forward logs directly using rsyslog + omkafka module → Kafka topic → Logstash → Elasticsearch.
 
+There are **two ways** to onboard a server. The **automated script** is the fastest and is recommended for most servers. The **manual method** is available for advanced or fully custom setups.
+
+---
+
+####  Easiest & Fastest: Automated Onboarding (Recommended)
+
+Onboard any Ubuntu/Linux server in **one command** — no manual config editing. The script asks a few questions, auto-discovers your logs, sets everything up, and verifies delivery to Kafka.
+
+**Run this on the server whose logs you want to forward:**
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/sankettaware16/TLSOCDockerDeploy/main/tlsoc-onboard.sh)
+```
+> Use `bash <(curl ...)` — **not** `curl | bash` — so the interactive prompts work.
+> Alternative: `curl -fsSL <url> -o tlsoc-onboard.sh && sudo bash tlsoc-onboard.sh`
+
+**What it does automatically:**
+- Installs the `omkafka` module (`rsyslog-kafka`) if missing
+- Asks for the **TLSOC server IP** and tests connectivity to port `9094` before continuing
+- Asks for the **Kafka topic** and envelope metadata (org / dept / env / server id)
+- **Auto-discovers** common logs in `/var/log` (auth, kern, ufw, dpkg, apt, nginx, apache, mail, fail2ban, auditd …) and lets you keep or drop any
+- Lets you add **custom log paths** (each verified to exist and be readable first)
+- Generates a **hardened, rotation-safe config** and validates it *before* restarting — so it never breaks existing logging
+- **Verifies end-to-end delivery** using a unique test marker and prints the exact command to confirm it reached Kafka
+
+**Why use it:**
+- One command instead of copy-pasting and hand-editing the config
+- Bakes in production safeguards automatically — survives log rotation, avoids replay bursts, and prevents logs from being silently dropped
+- Catches common mistakes up front (unreachable broker, unreadable files, message-size truncation)
+- Confirms logs are actually arriving in Kafka before you walk away
+
+**Non-interactive mode (for scripted rollouts):**
+```bash
+TLSOC_IP=<ip> TLSOC_TOPIC=<topic> TLSOC_ORG=<org> TLSOC_DEPT=<dept> \
+TLSOC_ENV=production TLSOC_SERVERID=<id> sudo bash tlsoc-onboard.sh
+```
+
+---
+
+####  Manual Method (Advanced / Custom Setups)
+
 Steps to Onboard Any Ubuntu/Linux Server
 Install the omkafka module (one-time per source server)
 ```bash

@@ -132,10 +132,17 @@ Onboard any Ubuntu/Linux server in **one command** — no manual config editing.
 
 **Run this on the server whose logs you want to forward:**
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/sankettaware16/TLSOCDockerDeploy/main/tlsoc-onboard.sh)
+# 1. As your normal user (NOT root) — download it:
+curl -fsSL https://raw.githubusercontent.com/sankettaware16/TLSOCDockerDeploy/main/tlsoc-onboard.sh -o tlsoc-onboard.sh
+
+# 2. Verify it actually downloaded a script (not an empty/HTML error page):
+ls -l tlsoc-onboard.sh
+head -5 tlsoc-onboard.sh
+
+# 3. Run it with sudo:
+sudo bash tlsoc-onboard.sh
 ```
-> Use `bash <(curl ...)` — **not** `curl | bash` — so the interactive prompts work.
-> Alternative: `curl -fsSL <url> -o tlsoc-onboard.sh && sudo bash tlsoc-onboard.sh`
+
 
 **What it does automatically:**
 - Installs the `omkafka` module (`rsyslog-kafka`) if missing

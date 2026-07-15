@@ -136,83 +136,104 @@ Template (copy-paste this entire block):
 ############################################################
 # Server → KAFKA (TLSOC) Log Forwarding Configuration
 # File Location  : /etc/rsyslog.d/tlsoc_logfwd.conf
-# After changes  : sudo systemctl restart rsyslog
+# After changes  : sudo rsyslogd -N1  &&  sudo systemctl restart rsyslog
+#
+# DESIGN NOTE — why the ruleset matters (do not remove it):
+# imfile re-injects each line it reads back into the rsyslog
+# engine. By default those lines traverse EVERY *.conf ruleset
+# on the host (e.g. 50-default.conf's "*.*" catch-all), which
+# can silently swallow them into /var/log/syslog BEFORE this
+# forwarder runs — and can make a file feed its own output back
+# into itself. Binding each input to a private ruleset
+# ("toKafka") sends its lines STRAIGHT to Kafka and stops them,
+# bypassing all other routing. This is the core safeguard.
 ############################################################
 
 #############################
 # LOAD REQUIRED MODULES
 #############################
-module(load="imfile")     # Required to read log files
-module(load="omkafka")    # Required to forward logs to Kafka
+module(load="imfile" mode="inotify")   # inotify follows files across rename-rotation
+module(load="omkafka")
 
 #############################
 # KAFKA MESSAGE TEMPLATE
 #############################
-# Modify ONLY the values marked as CHANGE REQUIRED
-
 template(name="KafkaProxyEnvelope" type="list") {
   constant(value="{\"meta\":{")
-  
-    constant(value="\"org\":\"xyz_university\",")        # CHANGE IF REQUIRED 
-    constant(value="\"dept\":\"cse\",")        # CHANGE REQUIRED
-    constant(value="\"env\":\"production\",")  # CHANGE REQUIRED (development/testing/prod)
-    constant(value="\"server\":\"cse_web_server_1\",")  # CHANGE REQUIRED (unique server identifier)
-
+    constant(value="\"org\":\"xyz_university\",")        # CHANGE IF REQUIRED
+    constant(value="\"dept\":\"cse\",")                  # CHANGE REQUIRED
+    constant(value="\"env\":\"production\",")            # CHANGE REQUIRED (development/testing/production)
+    constant(value="\"server\":\"cse_web_server_1\",")   # CHANGE REQUIRED (unique server identifier)
     constant(value="\"source_host\":\"")
       property(name="hostname")
     constant(value="\",")
     constant(value="\"source_program\":\"")
       property(name="programname")
     constant(value="\"")
-
   constant(value="},\"raw\":\"")
     property(name="msg" format="json")
   constant(value="\"}\n")
 }
 
 #############################
-# LOG INPUT CONFIGURATION
+# KAFKA-ONLY RULESET
+# Every message entering this ruleset is forwarded to Kafka and
+# stopped. Only the imfile inputs below feed it, so no
+# $programname filter is needed. To send different sources to a
+# DIFFERENT topic, copy this ruleset under a new name (e.g.
+# "toKafka_auth") with its own topic, and bind inputs to it.
 #############################
-# UPDATE the File path and Tag
-
-input(type="imfile"
-      File="/location/of/logs/tomcat.log"   # CHANGE REQUIRED → actual full path to log file
-      Tag="web_tomcat_logs"                 # CHANGE REQUIRED → unique tag for this source
-      Severity="info"
-      Facility="local4")
-
-# Example: Add more inputs as needed (nginx, auth, etc.)
-#input(type="imfile"
-#      File="/var/log/nginx/access.log"
-#      Tag="nginx_access"
-#      Severity="info"
-#      Facility="local4")
-
-#############################
-# KAFKA FORWARDING RULE
-#############################
-
-# $programname must match the Tag from input section above
-
-if $programname == 'web_tomcat_logs' then {    # ← Update to match your Tag
+ruleset(name="toKafka") {
   action(
     type="omkafka"
-    topic="cse_logs"                # CHANGE THIS → your Kafka topic_name
-    broker=["<IP-TLSOC>:9094"]   # ← Usually kept as-is (your central Kafka broker IP:port)
+    topic="cse_logs"                 # CHANGE REQUIRED → your Kafka topic name
+    broker=["<IP-TLSOC>:9094"]       # CHANGE REQUIRED → central Kafka broker IP:port
     key="%programname%"
     template="KafkaProxyEnvelope"
-
     confParam=[
       "compression.codec=snappy",
       "linger.ms=50",
       "batch.num.messages=1000"
     ]
-
-    action.resumeRetryCount="-1"
+    action.resumeRetryCount="-1"     # buffer + retry forever if broker is unreachable
   )
   stop
 }
 
+#############################
+# LOG INPUT CONFIGURATION
+# Add one input() block per log file. Each MUST have:
+#   ruleset="toKafka"        → routes it straight to Kafka (the safeguard)
+#   reopenOnTruncate="on"    → survives copytruncate log rotation
+#   freshStartTail="on"      → on FIRST deploy, starts at end-of-file
+#                              (no multi-GB replay burst on existing logs).
+#                              On later restarts it resumes from saved
+#                              offset, so no data is lost. Set to "off"
+#                              ONLY if you deliberately want to backfill
+#                              an existing file's full history on deploy.
+# Give every input a UNIQUE Tag — it becomes source_program in the
+# envelope AND the Kafka partition key.
+#############################
+input(type="imfile"
+      File="/location/of/logs/tomcat.log"   # CHANGE REQUIRED → full path to log file
+      Tag="web_tomcat_logs"                 # CHANGE REQUIRED → unique tag for this source
+      Severity="info"
+      Facility="local4"
+      ruleset="toKafka"
+      reopenOnTruncate="on"
+      freshStartTail="on"
+      persistStateInterval="200")           # save read-offset every 200 lines (crash safety)
+
+# --- Add more sources the same way (all → same topic, distinguished by Tag) ---
+#input(type="imfile"
+#      File="/var/log/nginx.log"
+#      Tag="nginx"
+#      Severity="info"
+#      Facility="local4"
+#      ruleset="toKafka"
+#      reopenOnTruncate="on"
+#      freshStartTail="on"
+#      persistStateInterval="200")
 ```
 # Save file → Restart rsyslog:
 ```

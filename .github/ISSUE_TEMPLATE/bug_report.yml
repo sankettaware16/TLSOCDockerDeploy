@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a defect in the stack, installer, certificates, or onboarding script
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Sanitize everything you paste** — replace real IPs,
+        hostnames, organization names, and passwords with placeholders
+        (`203.0.113.10`, `example_org`). Never attach real log data or certificates.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - install.sh / docker-compose stack
+        - Certificates / TLS (generate-certs.sh)
+        - tlsoc-onboard.sh (source onboarding)
+        - Logstash pipeline
+        - Kibana / saved objects
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Exact steps from a fresh state where possible.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Ubuntu version, Docker/Compose versions, `ELASTIC_VERSION`, fresh VM or existing system.
+      placeholder: Ubuntu 22.04, Docker 27.x, Compose v2.25, ELASTIC_VERSION=8.19.12, fresh VM
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Sanitized excerpts from `docker logs <service>`, `journalctl -u rsyslog`, or the installer output.
+      render: text
+    validations:
+      required: false

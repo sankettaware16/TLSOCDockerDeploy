@@ -1,326 +1,227 @@
-# TLSOCDockerDeploy 
-**One-Click TLS-Enabled SOC Stack (Kafka + Logstash + Elasticsearch + Kibana)**
+<p align="center">
+  <img src="docs/images/tlsoc-logo.jpeg" alt="TLSOC logo" width="110"/>
+</p>
 
-This repository provides a **plug-and-play, TLS-secured SOC deployment** using Docker Compose.  
-It is designed for **fresh Ubuntu servers**
+<h1 align="center">TLSOC Docker Deploy</h1>
+
+<p align="center">
+  <b>One-command, TLS-secured SOC core stack — Apache Kafka, Logstash, Elasticsearch, and Kibana on Docker Compose — plus agentless log-source onboarding.</b>
+</p>
+
+<p align="center">
+  <a href="https://github.com/sankettaware16/tlsoc"><img src="https://img.shields.io/badge/TLSOC-Ecosystem-4a6edb" alt="TLSOC Ecosystem"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"/></a>
+  <img src="https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white" alt="Docker Compose"/>
+  <img src="https://img.shields.io/badge/elastic%20stack-8.x-005571?logo=elastic" alt="Elastic Stack 8.x"/>
+  <img src="https://img.shields.io/badge/ubuntu-20.04%20%7C%2022.04%20%7C%2024.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu"/>
+</p>
+
+<p align="center">
+  <a href="#getting-started">Getting Started</a> •
+  <a href="docs/onboarding.md">Onboard a Server</a> •
+  <a href="docs/architecture.md">Architecture</a> •
+  <a href="docs/kafka-admin.md">Kafka Cheat Sheet</a> •
+  <a href="#tlsoc-ecosystem">Ecosystem</a>
+</p>
 
 ---
 
-##  Architecture
-Logs → Kafka → Logstash → Elasticsearch → Kibana
+## Overview
 
+TLSOC Docker Deploy is the deployment backbone of the
+[TLSOC platform](https://github.com/sankettaware16/tlsoc): a plug-and-play,
+TLS-secured SOC stack for **fresh Ubuntu servers**. One installer brings up Kafka,
+Logstash, Elasticsearch, and Kibana with all internal communication encrypted using
+a **locally generated certificate authority** — no cloud dependencies, no manual
+certificate wrangling.
 
-All internal communication is TLS-encrypted using a **locally generated CA**.
+Log collection is **agentless**: the bundled `tlsoc-onboard.sh` script configures any
+Linux server to forward its logs with stock `rsyslog` + `omkafka` in one command,
+with production safeguards (rotation-safe tailing, no replay bursts, buffered
+retry) baked in and end-to-end delivery verified before it exits.
 
----
+## Key Features
 
-##  Supported OS
+- **One-command install** — `install.sh` auto-detects the host IP, creates `.env`,
+  generates the CA and per-service certificates, and starts the stack.
+- **TLS everywhere** — Elasticsearch, Kibana, Logstash, and Kafka's external
+  listener all speak TLS, signed by a local CA you control.
+- **Agentless onboarding** — one command per monitored server; auto-discovers
+  common logs (auth, kern, ufw, nginx, apache, mail, fail2ban, auditd, …), lets
+  you add custom paths, validates the config before restarting rsyslog, and
+  verifies delivery to Kafka with a unique test marker.
+- **Rotation-safe, loss-averse forwarding** — inotify file tailing that survives
+  rename and copytruncate rotation, saved read-offsets (crash safety), buffered
+  infinite retry when the broker is unreachable, and a private rsyslog ruleset
+  that prevents forwarded lines from being swallowed by other rules.
+- **Engine-ready** — Logstash tails the ECS output of
+  [tlsoc-engine](https://github.com/sankettaware16/tlsoc-engine) and indexes it
+  over TLS; the Kibana container supports the engine's native TLSOC Parser
+  plugin.
+- **Ops included** — a [Kafka admin cheat sheet](docs/kafka-admin.md) for topic
+  inspection, live watching, and message counts.
 
-- Ubuntu **20.04 / 22.04 / 24.04**
-- Fresh VM or bare-metal recommended
+## Architecture
 
----
+```mermaid
+flowchart LR
+    subgraph src["Monitored servers"]
+        RS["rsyslog + omkafka<br/>(tlsoc-onboard.sh)"]
+    end
+    subgraph host["TLSOC server — Docker Compose"]
+        K["Kafka<br/>internal :9092 / TLS :9094"]
+        LS["Logstash"]
+        ES["Elasticsearch<br/>TLS :9200"]
+        KB["Kibana<br/>TLS :5601"]
+    end
+    ENG["tlsoc-engine<br/>(host service)"]
+    RS -- "TLS :9094" --> K
+    K --> ENG
+    ENG -- "ECS NDJSON<br/>/etc/parser_service/output" --> LS
+    LS --> ES --> KB
+```
 
-##  Prerequisites (Fresh Ubuntu)
+Certificates, volumes, ports, and the Logstash pipeline are detailed in
+[docs/architecture.md](docs/architecture.md).
 
-###  Update system
+## Getting Started
+
+### Prerequisites
+
+- Ubuntu **20.04 / 22.04 / 24.04** — fresh VM or bare metal recommended
+- Docker Engine + Docker Compose v2
+
 ```bash
 sudo apt update && sudo apt upgrade -y
-sudo apt install -y \
-  ca-certificates \
-  curl \
-  gnupg \
-  lsb-release \
-  git \
-  openssl
-```
-
-### Install Docker and Docker Compose
-
-```bash
+sudo apt install -y ca-certificates curl gnupg lsb-release git openssl
 curl -fsSL https://get.docker.com | sudo bash
-sudo systemctl enable docker
-sudo systemctl start docker
-sudo systemctl enable docker
-docker --version
-
-
-sudo mkdir -p /usr/local/lib/docker/cli-plugins
-sudo curl -SL https://github.com/docker/compose/releases/download/v2.25.0/docker-compose-linux-x86_64 \
-  -o /usr/local/lib/docker/cli-plugins/docker-compose
-sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-
+sudo systemctl enable --now docker
 ```
-## Installation
+
+### Install
+
 ```bash
 cd /opt
-sudo git clone https://github.com/sankettaware16/TLSOCDockerDeploy.git
-cd TLSOCDockerDeploy
-./certs/generate-certs.sh <ip server>
-
-sudo cp .env.example .env
-nano .env  #update the ip
+sudo git clone https://github.com/sankettaware16/tlsoc-docker-deploy.git
+cd tlsoc-docker-deploy
 sudo chmod +x install.sh
 sudo ./install.sh
-
 ```
 
-## IMPORTANT: First-Time Password Fix (Mandatory)
+The installer auto-detects the host IP (override it in `.env`), generates the
+certificates, and starts the stack.
 
-On first run, Kibana may fail authentication with Elasticsearch.
+> **Mandatory after first start:** reset the built-in Elastic passwords and put
+> them in `.env`, then restart the stack — the exact commands are in
+> [docs/installation.md](docs/installation.md#first-time-password-setup-mandatory).
+
+Then open Kibana at `https://<server-ip>:5601` (user `elastic`).
+
+> Existing deployments cloned as `/opt/TLSOCDockerDeploy` keep working — the
+> repository rename only affects new clones.
+
+### Onboard your first log source
+
+On the server whose logs you want to collect:
+
 ```bash
-#--------FOR KIBANA----------------
-
-docker exec -it elasticsearch \
-  /usr/share/elasticsearch/bin/elasticsearch-reset-password \
-  -u kibana_system \
-  --url https://elasticsearch:9200 \
-  -E xpack.security.http.ssl.verification_mode=certificate
-#--------FOR ELASTIC----------------
-docker exec -it elasticsearch \
-  /usr/share/elasticsearch/bin/elasticsearch-reset-password \
-  -u elastic \
-  --url https://elasticsearch:9200 \
-  -E xpack.security.http.ssl.verification_mode=certificate
-
-#copy the pass into env for both elastic and kibana_system
-it will look like
-Password for the [kibana_system] user successfully reset.
-New value: randompass
-```
-### ADDING PASSWORD TO ENVIRONMENT
-```bash
-sudo nano .env
-```
-change the password which you get from the above code
-for both elastic and kibana
-```bash
-ELASTIC_PASSWORD=ChangeThisElasticPassword
-KIBANA_PASSWORD=ChangeThisKibanaPassword
-```
-## RESTART STACK
-```bash
-docker compose down
-docker compose up -d
-docker ps
-```
-
-to check logs for each component
-```bash
-docker logs kibana -f
-docker logs logstash -f
-docker logs elasticsearch -f
-docker logs kafka -f
-```
-
-### ACCESS KIBANA FROM WEB
-```bash
-https://<ip-addr>:5601/
-
-```
-### Onboarding Log Sources (Agentless Forwarding via rsyslog + omkafka)
-
-This stack uses an agentless model: Linux servers forward logs directly using rsyslog + omkafka module → Kafka topic → Logstash → Elasticsearch.
-
-There are **two ways** to onboard a server. The **automated script** is the fastest and is recommended for most servers. The **manual method** is available for advanced or fully custom setups.
-
----
-
-####  Easiest & Fastest: Automated Onboarding (Recommended)
-
-Onboard any Ubuntu/Linux server in **one command** — no manual config editing. The script asks a few questions, auto-discovers your logs, sets everything up, and verifies delivery to Kafka.
-
-**Run this on the server whose logs you want to forward:**
-```bash
-# 1. As your normal user (NOT root) — download it:
-curl -fsSL https://raw.githubusercontent.com/sankettaware16/TLSOCDockerDeploy/main/tlsoc-onboard.sh -o tlsoc-onboard.sh
-
-# 2. Verify it actually downloaded a script (not an empty/HTML error page):
-ls -l tlsoc-onboard.sh
-head -5 tlsoc-onboard.sh
-
-# 3. Run it with sudo:
+curl -fsSL https://raw.githubusercontent.com/sankettaware16/tlsoc-docker-deploy/main/tlsoc-onboard.sh -o tlsoc-onboard.sh
 sudo bash tlsoc-onboard.sh
 ```
 
+The script asks for the TLSOC server IP and topic, auto-discovers logs, and
+verifies end-to-end delivery. Manual template and non-interactive rollout:
+[docs/onboarding.md](docs/onboarding.md).
 
-**What it does automatically:**
-- Installs the `omkafka` module (`rsyslog-kafka`) if missing
-- Asks for the **TLSOC server IP** and tests connectivity to port `9094` before continuing
-- Asks for the **Kafka topic** and envelope metadata (org / dept / env / server id)
-- **Auto-discovers** common logs in `/var/log` (auth, kern, ufw, dpkg, apt, nginx, apache, mail, fail2ban, auditd …) and lets you keep or drop any
-- Lets you add **custom log paths** (each verified to exist and be readable first)
-- Generates a **hardened, rotation-safe config** and validates it *before* restarting — so it never breaks existing logging
-- **Verifies end-to-end delivery** using a unique test marker and prints the exact command to confirm it reached Kafka
+## Usage
 
-**Why use it:**
-- One command instead of copy-pasting and hand-editing the config
-- Bakes in production safeguards automatically — survives log rotation, avoids replay bursts, and prevents logs from being silently dropped
-- Catches common mistakes up front (unreachable broker, unreadable files, message-size truncation)
-- Confirms logs are actually arriving in Kafka before you walk away
-
-**Non-interactive mode (for scripted rollouts):**
 ```bash
-TLSOC_IP=<ip> TLSOC_TOPIC=<topic> TLSOC_ORG=<org> TLSOC_DEPT=<dept> \
-TLSOC_ENV=production TLSOC_SERVERID=<id> sudo bash tlsoc-onboard.sh
+docker ps                        # stack status
+docker logs kibana -f            # per-service logs (kibana, logstash, elasticsearch, kafka)
+docker compose down              # stop
+docker compose up -d             # start
 ```
+
+Verify logs are arriving in Kafka:
+
+```bash
+sudo docker exec -it kafka /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server kafka:9092 --topic <topic>
+```
+
+More topic operations: [docs/kafka-admin.md](docs/kafka-admin.md).
+
+## Repository Structure
+
+```
+├── install.sh              # One-command installer (IP detection, certs, compose up)
+├── docker-compose.yml      # Kafka + Logstash + Elasticsearch + Kibana (TLS)
+├── .env.example            # Stack configuration template (versions, passwords, IP)
+├── tlsoc-onboard.sh        # Agentless log-source onboarding script
+├── certs/
+│   └── generate-certs.sh   # Local CA + per-service certificate generation
+├── logstash/
+│   ├── config/             # logstash.yml, pipelines.yml
+│   └── pipeline/           # kafka-to-es.conf (engine output → Elasticsearch)
+├── kibana/
+│   └── saved_objects/      # Importable dashboards/saved objects
+└── docs/                   # Documentation (see below)
+```
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [Installation](docs/installation.md) | Prerequisites, install, first-time password setup, verification, troubleshooting |
+| [Onboarding](docs/onboarding.md) | Automated and manual log-source onboarding (rsyslog + omkafka) |
+| [Architecture](docs/architecture.md) | Services, TLS/certificates, ports, volumes, Logstash pipeline |
+| [Kafka Admin](docs/kafka-admin.md) | Topic list/describe/watch/count cheat sheet |
+| [Roadmap](docs/roadmap.md) | Planned deployment work |
+
+## TLSOC Ecosystem
+
+TLSOC Docker Deploy is one component of TLSOC, the open-source Security Operations Platform:
+
+| Repository | Purpose |
+|---|---|
+| [tlsoc](https://github.com/sankettaware16/tlsoc) | Ecosystem home — documentation, architecture, roadmap |
+| [tlsoc-engine](https://github.com/sankettaware16/tlsoc-engine) | Log parsing and ECS normalization engine |
+| **tlsoc-docker-deploy** (this repository) | TLS-secured core stack (Kafka, Logstash, Elasticsearch, Kibana) |
+| [tlsoc-reporting](https://github.com/sankettaware16/tlsoc-reporting) | Declarative executive reporting (HTML/PDF) |
+
+## Roadmap
+
+Highlights — full list in [docs/roadmap.md](docs/roadmap.md):
+
+- Automated first-start password initialization (remove the manual reset step).
+- Multi-node Elasticsearch and Kafka profiles.
+- Bundled Kibana dashboard pack for the engine's ECS output.
+
+## Contributing
+
+Improvements to the stack, onboarding script, and documentation are welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md). Please note our
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+Report vulnerabilities privately per [SECURITY.md](SECURITY.md) — never via public
+issues.
+
+## License
+
+Free and open-source software under the [Apache License 2.0](LICENSE).
 
 ---
 
-####  Manual Method (Advanced / Custom Setups)
+<p align="center">
+  Built with ❤️ by <b>TrustLab, IIT Bombay</b><br/>
+  Part of the <a href="https://github.com/sankettaware16/tlsoc">TLSOC Ecosystem</a>
+</p>
 
-Steps to Onboard Any Ubuntu/Linux Server
-Install the omkafka module (one-time per source server)
-```bash
-sudo apt update
-sudo apt install -y rsyslog-kafka
-
-```
-Create the forwarding config file
-Create /etc/rsyslog.d/tlsoc_logfwd.conf and paste the template below.
-Template (copy-paste this entire block):
-```bash
-############################################################
-# Server → KAFKA (TLSOC) Log Forwarding Configuration
-# File Location  : /etc/rsyslog.d/tlsoc_logfwd.conf
-# After changes  : sudo rsyslogd -N1  &&  sudo systemctl restart rsyslog
-#
-# DESIGN NOTE — why the ruleset matters (do not remove it):
-# imfile re-injects each line it reads back into the rsyslog
-# engine. By default those lines traverse EVERY *.conf ruleset
-# on the host (e.g. 50-default.conf's "*.*" catch-all), which
-# can silently swallow them into /var/log/syslog BEFORE this
-# forwarder runs — and can make a file feed its own output back
-# into itself. Binding each input to a private ruleset
-# ("toKafka") sends its lines STRAIGHT to Kafka and stops them,
-# bypassing all other routing. This is the core safeguard.
-############################################################
-
-#############################
-# LOAD REQUIRED MODULES
-#############################
-module(load="imfile" mode="inotify")   # inotify follows files across rename-rotation
-module(load="omkafka")
-
-#############################
-# KAFKA MESSAGE TEMPLATE
-#############################
-template(name="KafkaProxyEnvelope" type="list") {
-  constant(value="{\"meta\":{")
-    constant(value="\"org\":\"xyz_university\",")        # CHANGE IF REQUIRED
-    constant(value="\"dept\":\"cse\",")                  # CHANGE REQUIRED
-    constant(value="\"env\":\"production\",")            # CHANGE REQUIRED (development/testing/production)
-    constant(value="\"server\":\"cse_web_server_1\",")   # CHANGE REQUIRED (unique server identifier)
-    constant(value="\"source_host\":\"")
-      property(name="hostname")
-    constant(value="\",")
-    constant(value="\"source_program\":\"")
-      property(name="programname")
-    constant(value="\"")
-  constant(value="},\"raw\":\"")
-    property(name="msg" format="json")
-  constant(value="\"}\n")
-}
-
-#############################
-# KAFKA-ONLY RULESET
-# Every message entering this ruleset is forwarded to Kafka and
-# stopped. Only the imfile inputs below feed it, so no
-# $programname filter is needed. To send different sources to a
-# DIFFERENT topic, copy this ruleset under a new name (e.g.
-# "toKafka_auth") with its own topic, and bind inputs to it.
-#############################
-ruleset(name="toKafka") {
-  action(
-    type="omkafka"
-    topic="cse_logs"                 # CHANGE REQUIRED → your Kafka topic name
-    broker=["<IP-TLSOC>:9094"]       # CHANGE REQUIRED → central Kafka broker IP:port
-    key="%programname%"
-    template="KafkaProxyEnvelope"
-    confParam=[
-      "compression.codec=snappy",
-      "linger.ms=50",
-      "batch.num.messages=1000"
-    ]
-    action.resumeRetryCount="-1"     # buffer + retry forever if broker is unreachable
-  )
-  stop
-}
-
-#############################
-# LOG INPUT CONFIGURATION
-# Add one input() block per log file. Each MUST have:
-#   ruleset="toKafka"        → routes it straight to Kafka (the safeguard)
-#   reopenOnTruncate="on"    → survives copytruncate log rotation
-#   freshStartTail="on"      → on FIRST deploy, starts at end-of-file
-#                              (no multi-GB replay burst on existing logs).
-#                              On later restarts it resumes from saved
-#                              offset, so no data is lost. Set to "off"
-#                              ONLY if you deliberately want to backfill
-#                              an existing file's full history on deploy.
-# Give every input a UNIQUE Tag — it becomes source_program in the
-# envelope AND the Kafka partition key.
-#############################
-input(type="imfile"
-      File="/location/of/logs/tomcat.log"   # CHANGE REQUIRED → full path to log file
-      Tag="web_tomcat_logs"                 # CHANGE REQUIRED → unique tag for this source
-      Severity="info"
-      Facility="local4"
-      ruleset="toKafka"
-      reopenOnTruncate="on"
-      freshStartTail="on"
-      persistStateInterval="200")           # save read-offset every 200 lines (crash safety)
-
-# --- Add more sources the same way (all → same topic, distinguished by Tag) ---
-#input(type="imfile"
-#      File="/var/log/nginx.log"
-#      Tag="nginx"
-#      Severity="info"
-#      Facility="local4"
-#      ruleset="toKafka"
-#      reopenOnTruncate="on"
-#      freshStartTail="on"
-#      persistStateInterval="200")
-```
-# Save file → Restart rsyslog:
-```
-sudo systemctl restart rsyslog
-sudo journalctl -u rsyslog -f    (look for errors)
-```
-
-### Confirming logs are recvied by kafka
-on TLSOCDOCKER machine 
-```
-cd /opt/TLSOCDockerDeploy/
-sudo docker exec -it kafka   /opt/kafka/bin/kafka-console-consumer.sh   --bootstrap-server kafka:9092   --topic topic_name(eg: cse_logs)
-```
-Real-time logs will be received
-
-# Quick TLSOC Kafka Admin Cheat Sheet
-```
-cd /opt/TLSOCDockerDeploy/
-```
-### List all topics
-```
-docker exec -it kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
-```
-### Describe topic
-```
-docker exec -it kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --describe --topic <topic>
-
-```
-### Live watch topic
-```
-docker exec -it kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic <topic>
-
-```
-### Read from beginning
-```
-docker exec -it kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic <topic> --from-beginning
-
-```
-### Approximate message count
-```
-docker exec -it kafka /opt/kafka/bin/kafka-run-class.sh kafka.tools.GetOffsetShell --broker-list kafka:9092 --topic <topic>
-
-```
+<p align="center">
+  <a href="https://github.com/sankettaware16/tlsoc">TLSOC</a> •
+  <a href="https://github.com/sankettaware16/tlsoc-engine">Engine</a> •
+  <a href="https://github.com/sankettaware16/tlsoc-docker-deploy">Deploy</a> •
+  <a href="https://github.com/sankettaware16/tlsoc-reporting">Reporting</a>
+</p>

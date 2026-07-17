@@ -25,9 +25,9 @@ this file covers what is specific to this repository.
 - `kibana/saved_objects/` — importable dashboards
 
 Parsing rules belong in
-[tlsoc-engine](https://github.com/sankettaware16/tlsoc-engine); report
+[foss-soc-engine](https://github.com/sankettaware16/foss-soc-engine); report
 definitions in
-[tlsoc-reporting](https://github.com/sankettaware16/tlsoc-reporting).
+[tlsoc-reporting-framework](https://github.com/sankettaware16/tlsoc-reporting-framework).
 
 ## Testing your changes
 

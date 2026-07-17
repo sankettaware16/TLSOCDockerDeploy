@@ -1,7 +1,7 @@
 # Onboarding Log Sources
 
 TLSOC uses an **agentless** model: Linux servers forward logs directly using
-`rsyslog` + the `omkafka` module → Kafka topic → tlsoc-engine → Logstash →
+`rsyslog` + the `omkafka` module → Kafka topic → TLSOC Engine → Logstash →
 Elasticsearch. Nothing custom is installed on the source machines beyond an
 rsyslog configuration.
 
@@ -19,7 +19,7 @@ and verifies delivery to Kafka.
 
 ```bash
 # 1. As your normal user (NOT root) — download it:
-curl -fsSL https://raw.githubusercontent.com/sankettaware16/tlsoc-docker-deploy/main/tlsoc-onboard.sh -o tlsoc-onboard.sh
+curl -fsSL https://raw.githubusercontent.com/sankettaware16/TLSOCDockerDeploy/main/tlsoc-onboard.sh -o tlsoc-onboard.sh
 
 # 2. Verify it actually downloaded a script (not an empty/HTML error page):
 ls -l tlsoc-onboard.sh
@@ -191,7 +191,7 @@ sudo journalctl -u rsyslog -f      # look for errors
 On the TLSOC server:
 
 ```bash
-cd /opt/tlsoc-docker-deploy/
+cd /opt/TLSOCDockerDeploy/
 sudo docker exec -it kafka /opt/kafka/bin/kafka-console-consumer.sh \
   --bootstrap-server kafka:9092 --topic <topic-name>
 ```
@@ -202,7 +202,7 @@ Real-time logs will be received. More topic operations:
 ## After onboarding
 
 Each unique `Tag` you configured arrives at
-[tlsoc-engine](https://github.com/sankettaware16/tlsoc-engine) as
+[foss-soc-engine](https://github.com/sankettaware16/foss-soc-engine) as
 `meta.source_program`. Map it to a parsing rule in the engine's
 `program_mapping` (the engine's `replicate.py` tool can auto-suggest the right
 rule from your samples) so the source is parsed into ECS events rather than

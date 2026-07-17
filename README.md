@@ -55,7 +55,7 @@ retry) baked in and end-to-end delivery verified before it exits.
   infinite retry when the broker is unreachable, and a private rsyslog ruleset
   that prevents forwarded lines from being swallowed by other rules.
 - **Engine-ready** — Logstash tails the ECS output of
-  [tlsoc-engine](https://github.com/sankettaware16/tlsoc-engine) and indexes it
+  [foss-soc-engine](https://github.com/sankettaware16/foss-soc-engine) and indexes it
   over TLS; the Kibana container supports the engine's native TLSOC Parser
   plugin.
 - **Ops included** — a [Kafka admin cheat sheet](docs/kafka-admin.md) for topic
@@ -74,7 +74,7 @@ flowchart LR
         ES["Elasticsearch<br/>TLS :9200"]
         KB["Kibana<br/>TLS :5601"]
     end
-    ENG["tlsoc-engine<br/>(host service)"]
+    ENG["TLSOC Engine<br/>(host service)"]
     RS -- "TLS :9094" --> K
     K --> ENG
     ENG -- "ECS NDJSON<br/>/etc/parser_service/output" --> LS
@@ -102,8 +102,8 @@ sudo systemctl enable --now docker
 
 ```bash
 cd /opt
-sudo git clone https://github.com/sankettaware16/tlsoc-docker-deploy.git
-cd tlsoc-docker-deploy
+sudo git clone https://github.com/sankettaware16/TLSOCDockerDeploy.git
+cd TLSOCDockerDeploy
 sudo chmod +x install.sh
 sudo ./install.sh
 ```
@@ -117,15 +117,12 @@ certificates, and starts the stack.
 
 Then open Kibana at `https://<server-ip>:5601` (user `elastic`).
 
-> Existing deployments cloned as `/opt/TLSOCDockerDeploy` keep working — the
-> repository rename only affects new clones.
-
 ### Onboard your first log source
 
 On the server whose logs you want to collect:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sankettaware16/tlsoc-docker-deploy/main/tlsoc-onboard.sh -o tlsoc-onboard.sh
+curl -fsSL https://raw.githubusercontent.com/sankettaware16/TLSOCDockerDeploy/main/tlsoc-onboard.sh -o tlsoc-onboard.sh
 sudo bash tlsoc-onboard.sh
 ```
 
@@ -185,9 +182,9 @@ TLSOC Docker Deploy is one component of TLSOC, the open-source Security Operatio
 | Repository | Purpose |
 |---|---|
 | [tlsoc](https://github.com/sankettaware16/tlsoc) | Ecosystem home — documentation, architecture, roadmap |
-| [tlsoc-engine](https://github.com/sankettaware16/tlsoc-engine) | Log parsing and ECS normalization engine |
-| **tlsoc-docker-deploy** (this repository) | TLS-secured core stack (Kafka, Logstash, Elasticsearch, Kibana) |
-| [tlsoc-reporting](https://github.com/sankettaware16/tlsoc-reporting) | Declarative executive reporting (HTML/PDF) |
+| [foss-soc-engine](https://github.com/sankettaware16/foss-soc-engine) | Log parsing and ECS normalization engine |
+| **TLSOCDockerDeploy** (this repository) | TLS-secured core stack (Kafka, Logstash, Elasticsearch, Kibana) |
+| [tlsoc-reporting-framework](https://github.com/sankettaware16/tlsoc-reporting-framework) | Declarative executive reporting (HTML/PDF) |
 
 ## Roadmap
 
@@ -221,7 +218,7 @@ Free and open-source software under the [Apache License 2.0](LICENSE).
 
 <p align="center">
   <a href="https://github.com/sankettaware16/tlsoc">TLSOC</a> •
-  <a href="https://github.com/sankettaware16/tlsoc-engine">Engine</a> •
-  <a href="https://github.com/sankettaware16/tlsoc-docker-deploy">Deploy</a> •
-  <a href="https://github.com/sankettaware16/tlsoc-reporting">Reporting</a>
+  <a href="https://github.com/sankettaware16/foss-soc-engine">Engine</a> •
+  <a href="https://github.com/sankettaware16/TLSOCDockerDeploy">Deploy</a> •
+  <a href="https://github.com/sankettaware16/tlsoc-reporting-framework">Reporting</a>
 </p>

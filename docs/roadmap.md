@@ -39,5 +39,5 @@ Shipped and maintained:
 
 ## Proposing changes
 
-Open a [feature request](https://github.com/sankettaware16/tlsoc-docker-deploy/issues) using the template. Roadmap changes land
+Open a [feature request](https://github.com/sankettaware16/TLSOCDockerDeploy/issues) using the template. Roadmap changes land
 here via pull request.

@@ -10,9 +10,9 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - Joined the unified TLSOC ecosystem: standardized README, branding, and
-  cross-repository links. Canonical repository name is now
-  `tlsoc-docker-deploy` (previously `TLSOCDockerDeploy`); existing clones and
-  the legacy `/opt/TLSOCDockerDeploy` install path keep working.
+  cross-repository links. The component is presented as **TLSOC Docker Deploy**;
+  the repository name (`TLSOCDockerDeploy`) and the `/opt/TLSOCDockerDeploy`
+  install path are unchanged.
 - Documentation reorganized into `docs/`: installation, onboarding, stack
   architecture, and the Kafka admin cheat sheet.
 

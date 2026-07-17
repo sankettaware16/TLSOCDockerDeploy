@@ -40,8 +40,8 @@ sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
 ```bash
 cd /opt
-sudo git clone https://github.com/sankettaware16/tlsoc-docker-deploy.git
-cd tlsoc-docker-deploy
+sudo git clone https://github.com/sankettaware16/TLSOCDockerDeploy.git
+cd TLSOCDockerDeploy
 sudo chmod +x install.sh
 sudo ./install.sh
 ```
@@ -59,12 +59,11 @@ sudo ./install.sh
 To regenerate certificates later (for example after an IP change), run
 `./certs/generate-certs.sh <server-ip>` and restart the stack.
 
-> **Upgrading a legacy clone?** Deployments installed as
-> `/opt/TLSOCDockerDeploy` keep working unchanged — the repository rename only
-> affects new clones. If you reinstall under the new path, remember that
-> [tlsoc-reporting](https://github.com/sankettaware16/tlsoc-reporting) auto-detects
-> the stack at `/opt/TLSOCDockerDeploy` by default; point its
-> `tlsoc_deploy.dir` setting at the new location.
+> **Installing somewhere other than `/opt/TLSOCDockerDeploy`?** That works, but
+> note that
+> [tlsoc-reporting-framework](https://github.com/sankettaware16/tlsoc-reporting-framework)
+> auto-detects the stack at `/opt/TLSOCDockerDeploy` by default — point its
+> `tlsoc_deploy.dir` setting at your location.
 
 ## First-time password setup (mandatory)
 
@@ -146,12 +145,12 @@ Sign in as `elastic` with your `ELASTIC_PASSWORD`.
 
 1. [Onboard log sources](onboarding.md) — start forwarding logs from your
    servers.
-2. Install [tlsoc-engine](https://github.com/sankettaware16/tlsoc-engine) to
+2. Install [foss-soc-engine](https://github.com/sankettaware16/foss-soc-engine) to
    parse and normalize the forwarded logs; Logstash tails its output directory
    (`/etc/parser_service/output` on the host — see
    [architecture.md](architecture.md#logstash-pipeline)) and indexes into
    Elasticsearch.
-3. Set up [tlsoc-reporting](https://github.com/sankettaware16/tlsoc-reporting)
+3. Set up [tlsoc-reporting-framework](https://github.com/sankettaware16/tlsoc-reporting-framework)
    for daily HTML/PDF reports.
 
 ## Troubleshooting
@@ -161,5 +160,5 @@ Sign in as `elastic` with your `ELASTIC_PASSWORD`.
 | Kibana login loop or 401 | Passwords in `.env` don't match Elasticsearch — redo the [password setup](#first-time-password-setup-mandatory) and restart |
 | Browser certificate warning | Expected: the stack uses a locally generated CA. Import `certs/ca/ca.crt` into your browser/OS trust store to remove it |
 | Onboarded server's logs never arrive | Check connectivity to `:9094`, then `sudo journalctl -u rsyslog -f` on the source; see [onboarding.md](onboarding.md) |
-| Logstash indexes nothing | The engine output bind mount is empty — confirm tlsoc-engine writes to the directory mounted as `/parser_output` |
+| Logstash indexes nothing | The engine output bind mount is empty — confirm TLSOC Engine writes to the directory mounted as `/parser_output` |
 | `elasticsearch` container restarts / OOM | Raise `ELASTIC_HEAP` in `.env` and ensure the VM has enough RAM |

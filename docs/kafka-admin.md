@@ -4,7 +4,7 @@ Day-to-day Kafka topic operations on the TLSOC server. All commands run from the
 deployment directory:
 
 ```bash
-cd /opt/tlsoc-docker-deploy/
+cd /opt/TLSOCDockerDeploy/
 ```
 
 ## List all topics
@@ -49,7 +49,7 @@ docker exec -it kafka /opt/kafka/bin/kafka-run-class.sh kafka.tools.GetOffsetShe
 
 One partition is consumed by at most one engine worker — provision at least as
 many partitions as total workers
-(see [tlsoc-engine — Deployment & Scaling](https://github.com/sankettaware16/tlsoc-engine/blob/main/docs/deployment.md)):
+(see [TLSOC Engine — Deployment & Scaling](https://github.com/sankettaware16/foss-soc-engine/blob/main/docs/deployment.md)):
 
 ```bash
 docker exec -it kafka /opt/kafka/bin/kafka-topics.sh \

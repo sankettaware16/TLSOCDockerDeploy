@@ -16,7 +16,7 @@ flowchart TB
         V[("esdata volume<br/>index storage")]
     end
     SRC["Monitored servers<br/>rsyslog + omkafka"] -- "TLS :9094" --> K
-    ENG["tlsoc-engine (host)"] -- "consumes" --> K
+    ENG["TLSOC Engine (host)"] -- "consumes" --> K
     ENG -- "writes ECS NDJSON<br/>/etc/parser_service/output" --> LS
     LS -- "HTTPS :9200" --> ES
     KB -- "HTTPS :9200" --> ES
@@ -60,7 +60,7 @@ certs/
 
 `logstash/pipeline/kafka-to-es.conf` does **not** read Kafka directly — parsing
 is the engine's job. Instead it tails the ECS NDJSON files that
-[tlsoc-engine](https://github.com/sankettaware16/tlsoc-engine) writes:
+[foss-soc-engine](https://github.com/sankettaware16/foss-soc-engine) writes:
 
 ```
 host: /etc/parser_service/output   →   container: /parser_output (read-only)
@@ -85,7 +85,7 @@ update the `path` list in `kafka-to-es.conf` to match your output file names.
 The engine also ships an **Elasticsearch index template** that types every ECS
 field correctly (dates, IPs, `geo_point`) — load it before the first event is
 indexed:
-[tlsoc-engine/elasticsearch](https://github.com/sankettaware16/tlsoc-engine/tree/main/elasticsearch).
+[foss-soc-engine/elasticsearch](https://github.com/sankettaware16/foss-soc-engine/tree/main/elasticsearch).
 
 ## Kibana extras
 
@@ -93,14 +93,14 @@ indexed:
   → Saved Objects → Import).
 - The Kibana container can host the engine's native **TLSOC Parser plugin**
   (rules/config console inside Kibana):
-  [tlsoc-engine/elk-plugin](https://github.com/sankettaware16/tlsoc-engine/tree/main/elk-plugin).
+  [foss-soc-engine/elk-plugin](https://github.com/sankettaware16/foss-soc-engine/tree/main/elk-plugin).
 
 ## Data flow summary
 
 1. Monitored servers publish `{meta, raw}` JSON envelopes to Kafka over TLS
    (`:9094`), keyed by `%programname%` so each source stays in one partition.
-2. tlsoc-engine (a host service, not a container) consumes the topics, parses
+2. TLSOC Engine (a host service, not a container) consumes the topics, parses
    and normalizes to ECS, and writes NDJSON to the shared output directory.
 3. Logstash tails that directory and indexes into Elasticsearch over TLS.
-4. Kibana serves dashboards; tlsoc-reporting queries the same indices for daily
+4. Kibana serves dashboards; TLSOC Reporting queries the same indices for daily
    reports.

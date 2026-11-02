@@ -12,3 +12,10 @@ esdata
 # Editor / OS junk
 .vscode/
 .DS_Store
+
+# Threat-intel collectors: keys, state and logs stay on the host
+intel/.env
+intel/.venv/
+intel/cache/
+intel/logs/
+__pycache__/

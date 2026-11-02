@@ -96,8 +96,8 @@ Two pipelines run (`logstash/config/pipelines.yml`):
 in `.env`.
 
 The engine also ships an **Elasticsearch index template** that types every ECS
-field correctly (dates, IPs, `geo_point`) — load it before the first event is
-indexed, setting its `index_patterns` to cover `fosstlsoc-logs-*`:
+field correctly (dates, IPs, `geo_point`) and applies to `fosstlsoc-logs-*` —
+load it before the first event is indexed:
 [foss-soc-engine/elasticsearch](https://github.com/sankettaware16/foss-soc-engine/tree/main/elasticsearch).
 
 ## Kibana extras

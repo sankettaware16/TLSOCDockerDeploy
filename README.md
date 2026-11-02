@@ -117,6 +117,15 @@ certificates, and starts the stack.
 
 Then open Kibana at `https://<server-ip>:5601` (user `elastic`).
 
+The installer also sets up [health monitoring and the SOC Overview
+dashboard](#monitoring--soc-overview-dashboard) automatically. On a fresh
+install that step waits for the password setup above - once the passwords are
+in `.env`, finish it with one command:
+
+```bash
+sudo ./monitoring/setup-monitoring.sh
+```
+
 ### Onboard your first log source
 
 On the server whose logs you want to collect:
@@ -148,6 +157,43 @@ sudo docker exec -it kafka /opt/kafka/bin/kafka-console-consumer.sh \
 
 More topic operations: [docs/kafka-admin.md](docs/kafka-admin.md).
 
+## Monitoring & SOC Overview Dashboard
+
+The stack monitors itself. A stdlib-only collector
+(`monitoring/tlsoc_health_collector.py`) runs every minute via cron and writes
+one status document per component to `tlsoc-health-*`:
+
+| Component | What is checked |
+|---|---|
+| elasticsearch | cluster health, heap, disk, docs, indexing rate |
+| kibana | `/api/status` |
+| logstash | container state + events in/out rates |
+| kafka | container state + consumer-group lag |
+| parser-engine | TLSOC Engine heartbeat, EPS, parse match rate |
+| host | load, memory, disk |
+| per log source | seconds since last event (active / stale / dead / clock-skew) |
+
+The **"TLSOC - SOC Overview"** Kibana dashboard (imported automatically) is the
+landing page for the SOC: total events and average EPS, log volume by source,
+per-source freshness, pipeline health tiles (Kafka lag, parser and Logstash
+throughput, heap/disk), detection-alert trends, and threat-intel stats - with
+dropdown controls to filter by log source, country, and domain.
+
+Everything is installed by `install.sh`; to run or re-run it manually:
+
+```bash
+sudo ./monitoring/setup-monitoring.sh                      # default Kibana space
+sudo KIBANA_SPACE=<space-id> ./monitoring/setup-monitoring.sh   # custom space
+```
+
+To customize panels, edit `kibana/generate_overview_dashboard.py`, regenerate,
+and re-import (the script header shows how).
+
+> **Index naming:** Logstash writes weekly indices
+> (`fosstlsoc-logs-<source>-<year>.<week>`), which keeps shard count low on
+> single-node deployments. The dashboard and collector read the
+> `fosstlsoc-logs-*` wildcard, so the rotation scheme is transparent to them.
+
 ## Repository Structure
 
 ```
@@ -159,8 +205,14 @@ More topic operations: [docs/kafka-admin.md](docs/kafka-admin.md).
 │   └── generate-certs.sh   # Local CA + per-service certificate generation
 ├── logstash/
 │   ├── config/             # logstash.yml, pipelines.yml
-│   └── pipeline/           # kafka-to-es.conf (engine output → Elasticsearch)
+│   └── pipeline/           # all.conf (engine output → weekly ES indices)
+├── monitoring/
+│   ├── setup-monitoring.sh          # One-shot auto-setup (called by install.sh)
+│   ├── tlsoc_health_collector.py    # Per-minute SIEM health collector (cron)
+│   ├── install-health-collector.sh  # Collector + index template installer
+│   └── tlsoc-health-template.json   # Mapping for tlsoc-health-* indices
 ├── kibana/
+│   ├── generate_overview_dashboard.py  # Builds the SOC Overview dashboard
 │   └── saved_objects/      # Importable dashboards/saved objects
 └── docs/                   # Documentation (see below)
 ```

@@ -1,0 +1,87 @@
+{
+  "index_patterns": ["tlsoc-health-*"],
+  "priority": 300,
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "refresh_interval": "5s"
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": { "type": "date" },
+        "event": { "properties": { "dataset": { "type": "keyword" } } },
+        "component": { "type": "keyword" },
+        "status": { "type": "keyword" },
+        "status_code": { "type": "byte" },
+        "details": { "type": "keyword", "ignore_above": 1024 },
+        "collector": { "properties": { "mode": { "type": "keyword" } } },
+        "container": {
+          "properties": {
+            "state": { "type": "keyword" },
+            "health": { "type": "keyword" },
+            "restart_count": { "type": "integer" },
+            "uptime_seconds": { "type": "long" }
+          }
+        },
+        "es": {
+          "properties": {
+            "cluster_status": { "type": "keyword" },
+            "active_shards": { "type": "integer" },
+            "heap_percent": { "type": "float" },
+            "cpu_percent": { "type": "float" },
+            "disk_used_percent": { "type": "float" },
+            "docs_total": { "type": "long" },
+            "store_bytes": { "type": "long" },
+            "indexing_rate": { "type": "float" }
+          }
+        },
+        "kibana": { "properties": { "status": { "type": "keyword" } } },
+        "logstash": {
+          "properties": {
+            "events_in": { "type": "long" },
+            "events_out": { "type": "long" },
+            "events_filtered": { "type": "long" },
+            "in_rate": { "type": "float" },
+            "out_rate": { "type": "float" }
+          }
+        },
+        "kafka": {
+          "properties": {
+            "consumer_group": { "type": "keyword" },
+            "total_lag": { "type": "long" },
+            "partitions": { "type": "integer" }
+          }
+        },
+        "parser": {
+          "properties": {
+            "eps": { "type": "float" },
+            "match_rate": { "type": "float" },
+            "parsed_total": { "type": "long" },
+            "no_match_total": { "type": "long" },
+            "errors_total": { "type": "long" },
+            "workers": { "type": "integer" },
+            "heartbeat_age_sec": { "type": "float" }
+          }
+        },
+        "host": {
+          "properties": {
+            "load1": { "type": "float" },
+            "mem_percent": { "type": "float" },
+            "disk_percent": { "type": "float" },
+            "cores": { "type": "integer" }
+          }
+        },
+        "log_source": {
+          "properties": {
+            "name": { "type": "keyword" },
+            "lag_seconds": { "type": "long" },
+            "last_event": { "type": "date" },
+            "events_5m": { "type": "long" },
+            "events_24h": { "type": "long" }
+          }
+        }
+      }
+    }
+  }
+}

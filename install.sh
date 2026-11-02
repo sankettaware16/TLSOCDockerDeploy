@@ -54,6 +54,19 @@ find certs -type f -exec chmod 644 {} \;
 # ---- Start stack ----
 docker compose up -d
 
+# ---- Health monitoring + SOC Overview dashboard (automatic, best effort) ----
+# On a FRESH install this will stop early because the elastic password is not
+# set yet: finish the first-time password steps in the README, then run
+#   sudo ./monitoring/setup-monitoring.sh
+if [ -f monitoring/setup-monitoring.sh ]; then
+  chmod +x monitoring/*.sh monitoring/tlsoc_health_collector.py
+  echo "[+] Setting up health monitoring + SOC Overview dashboard"
+  if ! ENV_FILE="$(pwd)/.env" ./monitoring/setup-monitoring.sh; then
+    echo "[!] Monitoring setup not finished yet (normal on first install)."
+    echo "    After the password steps, run: sudo ./monitoring/setup-monitoring.sh"
+  fi
+fi
+
 echo "--------------------------------------"
 echo " Kibana: https://$HOST_IP:5601"
 echo " User: elastic"

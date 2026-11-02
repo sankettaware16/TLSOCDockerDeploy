@@ -5,7 +5,8 @@
     "settings": {
       "number_of_shards": 1,
       "number_of_replicas": 0,
-      "refresh_interval": "5s"
+      "refresh_interval": "5s",
+      "index.lifecycle.name": "tlsoc-health"
     },
     "mappings": {
       "properties": {
@@ -14,6 +15,7 @@
         "component": { "type": "keyword" },
         "status": { "type": "keyword" },
         "status_code": { "type": "byte" },
+        "optional": { "type": "boolean" },
         "details": { "type": "keyword", "ignore_above": 1024 },
         "collector": { "properties": { "mode": { "type": "keyword" } } },
         "container": {

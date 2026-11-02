@@ -41,6 +41,7 @@ from datetime import datetime, timezone
 DOCKER_CONTAINERS = ["elasticsearch", "kibana", "logstash", "kafka"]
 KAFKA_CONSUMER_GROUP = "soc-parser-group"
 ENGINE_LOG_DIR_CANDIDATES = [
+    "/etc/foss-soc-engine/logs",
     "/opt/foss-soc-engine/logs",
     "/opt/tlsoc/foss-soc-engine/logs",
     os.path.expanduser("~/foss-soc-engine/logs"),
@@ -306,7 +307,25 @@ class Collector:
         self.container_doc("logstash", dinfo, detail,
                            **({"logstash": stats} if stats else {}))
 
+    def kafka_group(self):
+        """Consumer group to report lag for: --kafka-group / TLSOC_KAFKA_GROUP,
+        else `kafka.group_id` from the engine's config.yaml, else the default."""
+        if self.args.kafka_group:
+            return self.args.kafka_group
+        log_dir = self.engine_logs_dir()
+        if log_dir:
+            cfg = os.path.join(os.path.dirname(log_dir.rstrip("/")), "config.yaml")
+            try:
+                with open(cfg) as f:
+                    m = re.search(r'^\s*group_id:\s*["\']?([^"\'#\s]+)', f.read(), re.M)
+                if m:
+                    return m.group(1)
+            except OSError:
+                pass
+        return KAFKA_CONSUMER_GROUP
+
     def check_kafka(self, dinfo):
+        group = self.kafka_group()
         c = dinfo.get("kafka")
         extra = {}
         detail = ""
@@ -315,19 +334,19 @@ class Collector:
                 ["docker", "exec", "kafka",
                  "/opt/kafka/bin/kafka-consumer-groups.sh",
                  "--bootstrap-server", "localhost:9092",
-                 "--describe", "--group", KAFKA_CONSUMER_GROUP], timeout=45)
+                 "--describe", "--group", group], timeout=45)
             if rc == 0 and out.strip():
                 lag_total, partitions = 0, 0
                 for line in out.splitlines():
                     cols = line.split()
                     # GROUP TOPIC PARTITION CURRENT-OFFSET LOG-END-OFFSET LAG ...
-                    if len(cols) >= 6 and cols[0] == KAFKA_CONSUMER_GROUP:
+                    if len(cols) >= 6 and cols[0] == group:
                         partitions += 1
                         try:
                             lag_total += int(cols[5])
                         except ValueError:
                             pass
-                extra["kafka"] = {"consumer_group": KAFKA_CONSUMER_GROUP,
+                extra["kafka"] = {"consumer_group": group,
                                   "total_lag": lag_total, "partitions": partitions}
                 detail = f"lag {lag_total:,} ({partitions} partitions)"
             else:
@@ -346,7 +365,10 @@ class Collector:
                 return os.path.join(wd, "logs")
         return None
 
-    def check_parser_engine(self):
+    def engine_logs_dir(self):
+        """The foss-soc-engine logs directory, or None if no engine is installed."""
+        if hasattr(self, "_engine_logs"):
+            return self._engine_logs
         log_dir = self.args.engine_logs or self._engine_dir_from_systemd()
         if not log_dir:
             candidates = ENGINE_LOG_DIR_CANDIDATES + \
@@ -358,9 +380,18 @@ class Collector:
                         glob.glob(os.path.join(cand, "stats*.json"))):
                     log_dir = cand
                     break
-        if not log_dir or not os.path.isdir(log_dir):
-            self.add("parser-engine", DOWN, "engine logs dir not found "
-                     "(set --engine-logs /path/to/foss-soc-engine/logs)")
+        self._engine_logs = log_dir if log_dir and os.path.isdir(log_dir) else None
+        return self._engine_logs
+
+    def check_parser_engine(self):
+        log_dir = self.engine_logs_dir()
+        if not log_dir:
+            # Not an outage: on a fresh stack the engine is installed after the
+            # core stack (README step 3). Show it, but keep it out of `overall`.
+            self.add("parser-engine", DEGRADED,
+                     "not installed yet - install foss-soc-engine to parse logs "
+                     "(set --engine-logs if it is installed elsewhere)",
+                     status_word="not-installed", optional=True)
             return
         files = sorted(glob.glob(os.path.join(log_dir, "stats.w*.json"))) or \
             [os.path.join(log_dir, "stats.json")]
@@ -481,7 +512,7 @@ class Collector:
     # ---------------- overall + output ----------------
     def overall(self):
         core = [d for d in self.docs if d["event"]["dataset"] == "tlsoc.health"
-                and d["component"] != "host"]
+                and d["component"] != "host" and not d.get("optional")]
         srcs = [d for d in self.docs if d["event"]["dataset"] == "tlsoc.source_health"]
         if not core:
             return
@@ -546,6 +577,9 @@ def main():
                     help=".env file to read ELASTIC_PASSWORD from")
     ap.add_argument("--engine-logs", default=os.environ.get("TLSOC_ENGINE_LOGS"),
                     help="foss-soc-engine logs dir (auto-detected if omitted)")
+    ap.add_argument("--kafka-group", default=os.environ.get("TLSOC_KAFKA_GROUP"),
+                    help="engine consumer group to report lag for "
+                         "(default: group_id from the engine's config.yaml)")
     ap.add_argument("--state-file", default=os.environ.get("TLSOC_STATE_FILE",
                     "/var/lib/tlsoc-health/state.json"))
     ap.add_argument("--remote", action="store_true",

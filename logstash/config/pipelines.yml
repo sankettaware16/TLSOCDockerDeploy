@@ -1,8 +1,7 @@
 - pipeline.id: logs
-
   path.config: "/usr/share/logstash/pipeline/all.conf"
 
-#- pipeline.id: alerts
-
-#  path.config: "/usr/share/logstash/pipeline/alerts.conf"
-
+# Threat-intelligence feeds (see intel/README.md). Idle until the collectors
+# write files into <engine output>/threat_intel/.
+- pipeline.id: threat_intel
+  path.config: "/usr/share/logstash/pipeline/threat_intel.conf"

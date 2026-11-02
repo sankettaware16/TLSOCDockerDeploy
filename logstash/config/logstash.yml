@@ -1,1 +1,13 @@
 xpack.monitoring.enabled: false
+
+# Throughput tuning. Larger bulk requests amortize Elasticsearch round-trips
+# (the default batch of 125 spends most of its time waiting on bulk calls).
+# pipeline.workers defaults to the number of CPU cores; raise it only if
+# Elasticsearch still has idle write threads while Logstash is saturated.
+pipeline.batch.size: 1500
+pipeline.batch.delay: 50
+
+# The elasticsearch output logs every retried event (HTTP 429/503) at INFO,
+# which can grow the container log very quickly during a bulk-queue backlog.
+# `warn` keeps warnings and errors only.
+log.level: warn

@@ -9,15 +9,15 @@ platform-wide picture, see
 ```mermaid
 flowchart TB
     subgraph compose["Docker Compose stack"]
-        K["kafka<br/>apache/kafka:4.0.0<br/>:9092 internal · :9094 external (TLS)"]
+        K["kafka<br/>apache/kafka:4.2.0<br/>:9092 internal · :9094 external (TLS)"]
         LS["logstash<br/>docker.elastic.co ${ELASTIC_VERSION}"]
         ES["elasticsearch<br/>docker.elastic.co ${ELASTIC_VERSION}<br/>:9200 (TLS)"]
         KB["kibana<br/>docker.elastic.co ${ELASTIC_VERSION}<br/>:5601 (TLS)"]
-        V[("esdata volume<br/>index storage")]
+        V[("esdata · kafkadata · logstashdata<br/>named volumes")]
     end
     SRC["Monitored servers<br/>rsyslog + omkafka"] -- "TLS :9094" --> K
     ENG["TLSOC Engine (host)"] -- "consumes" --> K
-    ENG -- "writes ECS NDJSON<br/>/etc/parser_service/output" --> LS
+    ENG -- "writes ECS NDJSON<br/>ENGINE_OUTPUT_DIR" --> LS
     LS -- "HTTPS :9200" --> ES
     KB -- "HTTPS :9200" --> ES
     ES --- V
@@ -25,7 +25,7 @@ flowchart TB
 
 | Service | Image | Exposed ports | Role |
 |---|---|---|---|
-| `kafka` | `apache/kafka:4.0.0` | `9094` (external TLS listener) | Log transport buffer |
+| `kafka` | `apache/kafka:4.2.0` | `9094` (external TLS listener) | Log transport buffer |
 | `logstash` | `docker.elastic.co/logstash/logstash:${ELASTIC_VERSION}` | — | Indexes engine output into Elasticsearch |
 | `elasticsearch` | `docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}` | `9200` | Storage and search |
 | `kibana` | `docker.elastic.co/kibana/kibana:${ELASTIC_VERSION}` | `5601` (`KIBANA_PORT`) | Dashboards and search UI |
@@ -56,35 +56,48 @@ certs/
 - Browsers warn about the CA until you import `certs/ca/ca.crt` into the trust
   store; the connection is encrypted either way.
 
-## Logstash pipeline
+## Logstash pipelines
 
-`logstash/pipeline/kafka-to-es.conf` does **not** read Kafka directly — parsing
-is the engine's job. Instead it tails the ECS NDJSON files that
+Logstash does **not** read Kafka directly — parsing is the engine's job. It
+tails the ECS NDJSON files that
 [foss-soc-engine](https://github.com/sankettaware16/foss-soc-engine) writes:
 
 ```
-host: /etc/parser_service/output   →   container: /parser_output (read-only)
+host: ${ENGINE_OUTPUT_DIR} (default /var/log/soc_output)   →   container: /parser_output (read-only)
 ```
 
-Pipeline behavior:
+Two pipelines run (`logstash/config/pipelines.yml`):
 
-- `file` input in `tail` mode with a persistent `sincedb` (no re-indexing on
-  restart), JSON codec.
-- Promotes the envelope's `meta.server` (falling back to `meta.source_host`)
-  into `host.name`.
-- Drops `event.original` to halve index storage (the engine already offers
-  `output.include_original: false` for the same trade-off at the source).
-- Outputs to Elasticsearch over HTTPS with the local CA, into daily indices:
-  `all-logs-%{+YYYY.MM.dd}`.
+**`logs` — `logstash/pipeline/all.conf`**
 
-**Two paths must agree:** the engine's `paths.output_dir` and the compose bind
-mount source (`/etc/parser_service/output`). If your engine writes elsewhere
-(e.g. `/var/log/soc_output/`), edit the bind mount in `docker-compose.yml` — and
-update the `path` list in `kafka-to-es.conf` to match your output file names.
+- Tails `*.json` and the rotated `*.json.1` in tail mode, so the end of a file
+  the engine just rotated is read to completion. Read positions (sincedb) live
+  in the `logstashdata` volume, so a restart or container recreation neither
+  re-reads nor skips events. A bounded read per file per turn stops one
+  backlogged source from starving the others.
+- Derives `service_name` from the file name (`nginx.json` → `nginx`) and writes
+  to `fosstlsoc-logs-<service>-YYYY.MM.dd` — a new log source needs no Logstash
+  change.
+- Keeps the engine's `host.name` and `log.level`; removes only Logstash's own
+  metadata. To save storage, set `output.include_original: false` in the engine
+  instead of dropping `event.original` here.
+- Outputs over HTTPS, verifying the Elasticsearch certificate against the local
+  CA; the password comes from `ELASTIC_PASSWORD`.
+- Throughput settings (`pipeline.batch.size`, `log.level`) are in
+  `logstash/config/logstash.yml`.
+
+**`threat_intel` — `logstash/pipeline/threat_intel.conf`**
+
+- Tails `/parser_output/threat_intel/*.json`, written by the optional
+  collectors in [`intel/`](../intel/README.md), into the `tlsoc-threat-intel`
+  index with deterministic document ids (re-reads never duplicate).
+
+**Two paths must agree:** the engine's `paths.output_dir` and `ENGINE_OUTPUT_DIR`
+in `.env`.
 
 The engine also ships an **Elasticsearch index template** that types every ECS
 field correctly (dates, IPs, `geo_point`) — load it before the first event is
-indexed:
+indexed, setting its `index_patterns` to cover `fosstlsoc-logs-*`:
 [foss-soc-engine/elasticsearch](https://github.com/sankettaware16/foss-soc-engine/tree/main/elasticsearch).
 
 ## Kibana extras

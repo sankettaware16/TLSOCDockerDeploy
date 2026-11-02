@@ -77,7 +77,7 @@ flowchart LR
     ENG["TLSOC Engine<br/>(host service)"]
     RS -- "TLS :9094" --> K
     K --> ENG
-    ENG -- "ECS NDJSON<br/>/etc/parser_service/output" --> LS
+    ENG -- "ECS NDJSON<br/>ENGINE_OUTPUT_DIR" --> LS
     LS --> ES --> KB
 ```
 
@@ -189,10 +189,13 @@ sudo KIBANA_SPACE=<space-id> ./monitoring/setup-monitoring.sh   # custom space
 To customize panels, edit `kibana/generate_overview_dashboard.py`, regenerate,
 and re-import (the script header shows how).
 
-> **Index naming:** Logstash writes weekly indices
-> (`fosstlsoc-logs-<source>-<year>.<week>`), which keeps shard count low on
-> single-node deployments. The dashboard and collector read the
-> `fosstlsoc-logs-*` wildcard, so the rotation scheme is transparent to them.
+> **Index naming:** Logstash writes one index per service per day
+> (`fosstlsoc-logs-<service>-YYYY.MM.dd`, e.g. `fosstlsoc-logs-nginx-2026.11.02`).
+> New log sources need no Logstash change: the service name comes from the
+> engine's output file name. Reports and dashboards query the
+> `fosstlsoc-logs-*` wildcard. To use weekly indices instead (fewer shards on
+> small clusters), change the date pattern in `logstash/pipeline/all.conf` to
+> `%{+xxxx.ww}`.
 
 ## Repository Structure
 
@@ -205,7 +208,9 @@ and re-import (the script header shows how).
 │   └── generate-certs.sh   # Local CA + per-service certificate generation
 ├── logstash/
 │   ├── config/             # logstash.yml, pipelines.yml
-│   └── pipeline/           # all.conf (engine output → weekly ES indices)
+│   └── pipeline/           # all.conf (engine output → daily per-service indices)
+│                           # threat_intel.conf (IOC feeds → tlsoc-threat-intel)
+├── intel/                  # Optional threat-intel collectors (AbuseIPDB, OTX, OpenPhish, MISP)
 ├── monitoring/
 │   ├── setup-monitoring.sh          # One-shot auto-setup (called by install.sh)
 │   ├── tlsoc_health_collector.py    # Per-minute SIEM health collector (cron)

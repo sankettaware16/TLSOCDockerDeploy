@@ -140,6 +140,7 @@ Sign in as `elastic` with your `ELASTIC_PASSWORD`.
 | `ELASTIC_PASSWORD` | — | `elastic` superuser password (set after first-time reset) |
 | `KIBANA_PASSWORD` | — | `kibana_system` password (set after first-time reset) |
 | `KIBANA_ENCRYPTION_KEY` | auto-generated | Encrypts Kibana saved objects (alerting rules, connectors). Created by `install.sh`; keep it stable and private. The stack refuses to start if it is missing |
+| `ENGINE_OUTPUT_DIR` | `/var/log/soc_output` | Folder the TLSOC Engine writes its NDJSON to (engine `paths.output_dir`); mounted read-only into Logstash. Must match the engine |
 | `ELASTIC_HEAP` | `1g` | Elasticsearch JVM heap size |
 | `KIBANA_PORT` | `5601` | Kibana HTTPS port |
 | `HOST_IP` | auto-detected | The server IP baked into certificates and external listeners |
@@ -150,7 +151,7 @@ Sign in as `elastic` with your `ELASTIC_PASSWORD`.
    servers.
 2. Install [foss-soc-engine](https://github.com/sankettaware16/foss-soc-engine) to
    parse and normalize the forwarded logs; Logstash tails its output directory
-   (`/etc/parser_service/output` on the host — see
+   (`ENGINE_OUTPUT_DIR`, default `/var/log/soc_output` — see
    [architecture.md](architecture.md#logstash-pipeline)) and indexes into
    Elasticsearch.
 3. Set up [tlsoc-reporting-framework](https://github.com/sankettaware16/tlsoc-reporting-framework)

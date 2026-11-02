@@ -42,8 +42,17 @@ retry) baked in and end-to-end delivery verified before it exits.
 
 ## Key Features
 
-- **One-command install** — `install.sh` auto-detects the host IP, creates `.env`,
-  generates the CA and per-service certificates, and starts the stack.
+- **One-command install** — `install.sh` auto-detects the host IP, creates `.env`
+  with **generated passwords**, generates the CA and per-service certificates,
+  prepares retention and field mappings, starts the stack, and installs the
+  dashboards. No manual password or Kibana setup steps.
+- **Dashboards ready on day one** — the *TLSOC - SOC Overview* dashboard and the
+  self-monitoring collector are installed automatically; if that step is skipped
+  or fails, `sudo ./dashboards.sh` (or an automatic retry job) finishes it.
+- **Retention that fits the rules and the disk** — 180-day default aligned with
+  the CERT-In Directions (India), hot → warm → delete lifecycle, an optional
+  shorter tier for very chatty sources, and a report that tells you whether your
+  settings fit your disk. See [Data retention and storage](docs/retention-and-storage.md).
 - **TLS everywhere** — Elasticsearch, Kibana, Logstash, and Kafka's external
   listener all speak TLS, signed by a local CA you control.
 - **Agentless onboarding** — one command per monitored server; auto-discovers
@@ -109,22 +118,19 @@ sudo ./install.sh
 ```
 
 The installer auto-detects the host IP (override it in `.env`), generates the
-certificates, and starts the stack.
+passwords and certificates, applies the retention policies and index templates,
+starts the stack, and imports the dashboard. It prints the Kibana address and the
+generated `elastic` password at the end (also stored in `.env`).
 
-> **Mandatory after first start:** reset the built-in Elastic passwords and put
-> them in `.env`, then restart the stack — the exact commands are in
-> [docs/installation.md](docs/installation.md#first-time-password-setup-mandatory).
+Open Kibana at `https://<server-ip>:5601` (user `elastic`) →
+**Dashboards → TLSOC - SOC Overview**. It works immediately; panels fed by logs
+fill in as soon as the [engine](https://github.com/sankettaware16/foss-soc-engine)
+starts producing events.
 
-Then open Kibana at `https://<server-ip>:5601` (user `elastic`).
-
-The installer also sets up [health monitoring and the SOC Overview
-dashboard](#monitoring--soc-overview-dashboard) automatically. On a fresh
-install that step waits for the password setup above - once the passwords are
-in `.env`, finish it with one command:
-
-```bash
-sudo ./monitoring/setup-monitoring.sh
-```
+> **If the dashboard step was skipped or failed** (Kibana still starting, or the
+> installer was not run as root), run `sudo ./dashboards.sh` — it is safe to
+> repeat, and as root the installer already schedules automatic retries. See
+> [Dashboards and monitoring](docs/dashboards.md).
 
 ### Onboard your first log source
 
@@ -179,15 +185,16 @@ per-source freshness, pipeline health tiles (Kafka lag, parser and Logstash
 throughput, heap/disk), detection-alert trends, and threat-intel stats - with
 dropdown controls to filter by log source, country, and domain.
 
-Everything is installed by `install.sh`; to run or re-run it manually:
+Everything is installed by `install.sh`. To (re)run it by hand at any time:
 
 ```bash
-sudo ./monitoring/setup-monitoring.sh                      # default Kibana space
-sudo KIBANA_SPACE=<space-id> ./monitoring/setup-monitoring.sh   # custom space
+sudo ./dashboards.sh                  # full setup: retention, health collector, dashboard
+./dashboards.sh --no-collector        # dashboard only, no root needed
+sudo ./dashboards.sh --space <id>     # import into another Kibana space
 ```
 
-To customize panels, edit `kibana/generate_overview_dashboard.py`, regenerate,
-and re-import (the script header shows how).
+Options, the automatic retry job, and troubleshooting:
+[Dashboards and monitoring](docs/dashboards.md).
 
 > **Index naming:** Logstash writes one index per service per day
 > (`fosstlsoc-logs-<service>-YYYY.MM.dd`, e.g. `fosstlsoc-logs-nginx-2026.11.02`).
@@ -200,7 +207,8 @@ and re-import (the script header shows how).
 ## Repository Structure
 
 ```
-├── install.sh              # One-command installer (IP detection, certs, compose up)
+├── install.sh              # One-command installer (passwords, certs, retention, stack, dashboards)
+├── dashboards.sh           # Install/repair/upgrade the dashboards + health monitoring (re-runnable)
 ├── docker-compose.yml      # Kafka + Logstash + Elasticsearch + Kibana (TLS)
 ├── .env.example            # Stack configuration template (versions, passwords, IP)
 ├── tlsoc-onboard.sh        # Agentless log-source onboarding script
@@ -210,6 +218,10 @@ and re-import (the script header shows how).
 │   ├── config/             # logstash.yml, pipelines.yml
 │   └── pipeline/           # all.conf (engine output → daily per-service indices)
 │                           # threat_intel.conf (IOC feeds → tlsoc-threat-intel)
+├── elasticsearch/
+│   ├── setup_storage.py    # Retention (ILM) policies + index templates, from .env
+│   ├── retention_report.py # Does your retention fit your disk?
+│   └── soc-index-template.json  # Field types from the TLSOC Engine (bundled copy)
 ├── intel/                  # Optional threat-intel collectors (AbuseIPDB, OTX, OpenPhish, MISP)
 ├── monitoring/
 │   ├── setup-monitoring.sh          # One-shot auto-setup (called by install.sh)
@@ -226,7 +238,9 @@ and re-import (the script header shows how).
 
 | Document | Contents |
 |---|---|
-| [Installation](docs/installation.md) | Prerequisites, install, first-time password setup, verification, troubleshooting |
+| [Installation](docs/installation.md) | Prerequisites, install, passwords, upgrading, verification, troubleshooting |
+| [Dashboards and monitoring](docs/dashboards.md) | The SOC Overview dashboard, `dashboards.sh`, the health collector, automatic retry |
+| [Data retention and storage](docs/retention-and-storage.md) | Retention policy (CERT-In), sizing the disk, changing retention and templates |
 | [Onboarding](docs/onboarding.md) | Automated and manual log-source onboarding (rsyslog + omkafka) |
 | [Architecture](docs/architecture.md) | Services, TLS/certificates, ports, volumes, Logstash pipeline |
 | [Kafka Admin](docs/kafka-admin.md) | Topic list/describe/watch/count cheat sheet |
@@ -247,9 +261,9 @@ TLSOC Docker Deploy is one component of TLSOC, the open-source Security Operatio
 
 Highlights — full list in [docs/roadmap.md](docs/roadmap.md):
 
-- Automated first-start password initialization (remove the manual reset step).
-- Multi-node Elasticsearch and Kafka profiles.
-- Bundled Kibana dashboard pack for the engine's ECS output.
+- Multi-node Elasticsearch and Kafka profiles (tiered hot/warm/cold storage).
+- Snapshot-based backups of retained logs.
+- More bundled dashboards (per-source drill-downs for the engine's ECS output).
 
 ## Contributing
 

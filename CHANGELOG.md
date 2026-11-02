@@ -21,6 +21,19 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **No manual first-start steps.** `install.sh` now generates random
+  `elastic` / `kibana_system` passwords (stored only in `.env`, `chmod 600`),
+  starts Elasticsearch first, sets the `kibana_system` password itself, applies
+  retention and templates, starts the rest of the stack, and imports the
+  dashboard. The old "first-time password setup (mandatory)" procedure is gone.
+  **Upgrading:** existing `.env` values are never overwritten.
+- `install.sh` is safe to re-run: valid existing certificates are kept (they were
+  regenerated every time before) and initialised stacks keep their passwords.
+- **Log retention is now managed (default 180 days).** Previously nothing expired
+  the data. See "Added" below. **Upgrading:** check disk first with
+  `./elasticsearch/retention_report.py`; a disk sized for a few days of data will
+  not hold 180. Shortening retention or attaching a policy to old indices that
+  had none refuses to run without `--confirm-shrink`.
 - **Logstash pipeline replaced** (`kafka-to-es.conf` → `all.conf`): indices are
   now `fosstlsoc-logs-<service>-YYYY.MM.dd`, derived from the engine's output
   file names, so new sources need no Logstash change. Rotation-aware tailing,
@@ -50,6 +63,25 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Data retention and index templates** (`elasticsearch/`): ILM policies
+  `tlsoc-logs` (hot → warm compaction → delete, default 180 days per the CERT-In
+  Directions of 28 April 2022), `tlsoc-logs-highvolume` (optional shorter tier for
+  chatty sources) and `tlsoc-health`; component and index templates layering the
+  TLSOC Engine's field types with shard/replica/lifecycle settings; an optional
+  operator-owned `tlsoc-logs@custom` override; `setup_storage.py` (idempotent,
+  `--dry-run`, `--reassign`, `--confirm-shrink`) and `retention_report.py`
+  (does retention fit the disk?). Guide: `docs/retention-and-storage.md`.
+- **`dashboards.sh`**: one idempotent command that installs or repairs the
+  dashboard, base indices, health collector and Kibana space; the installer
+  schedules automatic retries (root) when the first attempt fails, and the job
+  removes itself on success or after 24 hours. Guide: `docs/dashboards.md`.
+- Dashboards work on an empty install: empty base indices
+  (`fosstlsoc-logs-_seed`, `tlsoc-threat-intel`) carry the field lists, and
+  `service_name` and the threat-intel fields are mapped up front.
+- Health collector: Kafka consumer group is read from the engine's
+  `config.yaml`; an engine that is not installed yet is shown as `not-installed`
+  and no longer turns the overall status red; also finds an engine installed
+  in `/etc/foss-soc-engine`.
 - Health monitoring and the "TLSOC - SOC Overview" Kibana dashboard
   (`monitoring/`, `kibana/`), set up automatically by `install.sh`.
 - Optional threat-intelligence collectors (`intel/`): AbuseIPDB, AlienVault OTX,

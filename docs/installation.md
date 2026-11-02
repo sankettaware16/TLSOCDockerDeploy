@@ -46,17 +46,27 @@ sudo chmod +x install.sh
 sudo ./install.sh
 ```
 
-`install.sh` performs the whole first bring-up:
+`install.sh` performs the whole first bring-up, in this order:
 
 1. Verifies Docker and Docker Compose are present.
-2. Creates `.env` from `.env.example` if missing.
+2. Creates `.env` from `.env.example` and **generates random passwords** for
+   `elastic` and `kibana_system` plus the Kibana encryption key
+   (`KIBANA_ENCRYPTION_KEY`). Existing values are never overwritten, and a stack
+   that is already initialised is never given new passwords.
 3. Auto-detects the host IP and writes it to `.env` (`HOST_IP`) — set it
    yourself in `.env` first if the machine has multiple interfaces.
-4. Generates a random Kibana encryption key (`KIBANA_ENCRYPTION_KEY`) and
-   saves it to `.env`. An existing key is never overwritten.
-5. Generates the local CA and per-service TLS certificates
-   (`certs/generate-certs.sh <ip>`).
-6. Starts the stack with `docker compose up -d`.
+4. Generates the local CA and per-service TLS certificates. Valid existing
+   certificates are kept, so re-running the installer is safe.
+5. Starts **Elasticsearch first**, sets the `kibana_system` password, and applies
+   the [data retention policies and index templates](retention-and-storage.md)
+   before any event can be indexed.
+6. Starts the rest of the stack (Kafka, Logstash, Kibana).
+7. Imports the **SOC Overview dashboard** and, when run as root, installs the
+   health collector — see [Dashboards and monitoring](dashboards.md).
+
+At the end it prints the Kibana address and, on a fresh install, the generated
+`elastic` password (also stored in `.env`, readable only by root). There is **no
+manual password step**.
 
 To regenerate certificates later (for example after an IP change), run
 `./certs/generate-certs.sh <server-ip>` and restart the stack.
@@ -67,52 +77,17 @@ To regenerate certificates later (for example after an IP change), run
 > auto-detects the stack at `/opt/TLSOCDockerDeploy` by default — point its
 > `tlsoc_deploy.dir` setting at your location.
 
-## First-time password setup (mandatory)
+## Passwords
 
-On first run, Kibana may fail authentication with Elasticsearch. Reset both
-built-in users and store the generated passwords in `.env`:
+Passwords are generated for you (step 2 above) and live only in `.env`
+(`chmod 600`). To change the `elastic` password later, use Kibana (Stack
+Management → Users) or the Elasticsearch API, then update `ELASTIC_PASSWORD` in
+`.env` so the scripts that read it keep working.
 
-```bash
-# -------- for kibana_system --------
-docker exec -it elasticsearch \
-  /usr/share/elasticsearch/bin/elasticsearch-reset-password \
-  -u kibana_system \
-  --url https://elasticsearch:9200 \
-  -E xpack.security.http.ssl.verification_mode=certificate
-
-# -------- for elastic --------
-docker exec -it elasticsearch \
-  /usr/share/elasticsearch/bin/elasticsearch-reset-password \
-  -u elastic \
-  --url https://elasticsearch:9200 \
-  -E xpack.security.http.ssl.verification_mode=certificate
-```
-
-Each command prints a line like:
-
-```
-Password for the [kibana_system] user successfully reset.
-New value: <generated-password>
-```
-
-Copy both generated passwords into `.env`:
-
-```bash
-sudo nano .env
-```
-
-```bash
-ELASTIC_PASSWORD=<generated elastic password>
-KIBANA_PASSWORD=<generated kibana_system password>
-```
-
-Restart the stack so the new credentials take effect:
-
-```bash
-docker compose down
-docker compose up -d
-docker ps
-```
+**Upgrading a stack installed before passwords were generated?** Nothing
+changes: your existing `.env` values are kept. If your `.env` still contains the
+placeholders `ChangeMeElastic` / `ChangeMeKibana` on an initialised stack, the
+installer stops and asks you to set the real passwords first.
 
 ## Verify
 
@@ -130,20 +105,60 @@ Open Kibana from a browser:
 https://<server-ip>:5601/
 ```
 
-Sign in as `elastic` with your `ELASTIC_PASSWORD`.
+Sign in as `elastic` with the password printed by the installer (or
+`ELASTIC_PASSWORD` in `.env`). Then open **Dashboards → TLSOC - SOC Overview**;
+it is installed and working from the start (panels fed by logs show "No results"
+until the first events arrive).
+
+## If the dashboards step was skipped or failed
+
+The installer imports the dashboard and, if Kibana is not ready in time or the
+installer was not run as root, tells you so. As root it also schedules automatic
+retries every 10 minutes (for up to 24 hours). To do it yourself at any time:
+
+```bash
+sudo ./dashboards.sh            # full setup, safe to repeat
+./dashboards.sh --no-collector  # dashboards only, no root needed
+```
+
+Details and options: [Dashboards and monitoring](dashboards.md).
 
 ## Configuration reference (`.env`)
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `ELASTIC_VERSION` | `8.19.12` | Elastic Stack image version (Elasticsearch, Kibana, Logstash) |
-| `ELASTIC_PASSWORD` | — | `elastic` superuser password (set after first-time reset) |
-| `KIBANA_PASSWORD` | — | `kibana_system` password (set after first-time reset) |
+| `ELASTIC_PASSWORD` | auto-generated | `elastic` superuser password. Generated by `install.sh` on a fresh install |
+| `KIBANA_PASSWORD` | auto-generated | `kibana_system` password; `install.sh` sets it in Elasticsearch for you |
 | `KIBANA_ENCRYPTION_KEY` | auto-generated | Encrypts Kibana saved objects (alerting rules, connectors). Created by `install.sh`; keep it stable and private. The stack refuses to start if it is missing |
 | `ENGINE_OUTPUT_DIR` | `/var/log/soc_output` | Folder the TLSOC Engine writes its NDJSON to (engine `paths.output_dir`); mounted read-only into Logstash. Must match the engine |
 | `ELASTIC_HEAP` | `1g` | Elasticsearch JVM heap size |
 | `KIBANA_PORT` | `5601` | Kibana HTTPS port |
 | `HOST_IP` | auto-detected | The server IP baked into certificates and external listeners |
+| `LOG_RETENTION_DAYS` | `180` | How long parsed logs are kept (CERT-In: rolling 180 days) |
+| `WARM_AFTER_DAYS` | `7` | Age at which an index is compacted (merged, better compression) |
+| `HIGH_VOLUME_SOURCES` | empty | Chatty sources kept for less time, e.g. `squid,dns` |
+| `HIGH_VOLUME_RETENTION_DAYS` | `30` | Retention for the sources above |
+| `HEALTH_RETENTION_DAYS` | `90` | Retention of self-monitoring data |
+| `INDEX_SHARDS` / `INDEX_REPLICAS` | `1` / `0` | Shards per daily index; replicas (keep `0` on this single-node stack) |
+
+How to choose these values and size the disk:
+[Data retention and storage](retention-and-storage.md).
+
+## Upgrading an existing installation
+
+```bash
+cd /opt/TLSOCDockerDeploy
+git pull
+sudo ./dashboards.sh
+```
+
+`dashboards.sh` is the upgrade command: it applies retention policies and
+templates (new indices only get them from now on; indices that already have a
+policy of their own are never touched), refreshes the health collector and
+re-imports the dashboard. Review the [CHANGELOG](../CHANGELOG.md) for items that
+need a decision, in particular the new default log retention of 180 days
+(check disk first with `./elasticsearch/retention_report.py`).
 
 ## Next steps
 
@@ -161,7 +176,10 @@ Sign in as `elastic` with your `ELASTIC_PASSWORD`.
 
 | Symptom | Likely cause / fix |
 |---|---|
-| Kibana login loop or 401 | Passwords in `.env` don't match Elasticsearch — redo the [password setup](#first-time-password-setup-mandatory) and restart |
+| Kibana login loop or 401 | The password in `.env` does not match Elasticsearch (only possible if `.env` was edited or replaced after the first start). Restore the original `.env`, or reset the password and update `.env` |
+| Dashboard missing or panels show errors | Run `sudo ./dashboards.sh` (safe to repeat); see [Dashboards and monitoring](dashboards.md#troubleshooting) |
+| Cluster status yellow | A replica cannot be placed on a single node. Keep `INDEX_REPLICAS=0` and run `sudo ./dashboards.sh` (it also fixes existing indices) |
+| Indexing stops, "read-only" errors | The disk reached Elasticsearch's flood-stage watermark. See [Data retention and storage](retention-and-storage.md#when-the-disk-fills-up) |
 | Browser certificate warning | Expected: the stack uses a locally generated CA. Import `certs/ca/ca.crt` into your browser/OS trust store to remove it |
 | Onboarded server's logs never arrive | Check connectivity to `:9094`, then `sudo journalctl -u rsyslog -f` on the source; see [onboarding.md](onboarding.md) |
 | Logstash indexes nothing | The engine output bind mount is empty — confirm TLSOC Engine writes to the directory mounted as `/parser_output` |

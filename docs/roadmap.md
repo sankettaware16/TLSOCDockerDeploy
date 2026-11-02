@@ -14,21 +14,28 @@ Shipped and maintained:
 - Agentless onboarding script (`tlsoc-onboard.sh`) with log auto-discovery,
   hardened rotation-safe rsyslog configuration, and end-to-end delivery
   verification.
-- Kafka admin cheat sheet and importable Kibana saved objects.
+- Kafka admin cheat sheet.
+- Generated passwords and automatic `kibana_system` setup (no manual reset step).
+- Data retention (ILM) aligned with the CERT-In 180-day requirement, with a
+  disk-fit report, a shorter tier for very chatty sources, and a customisation
+  hook for templates.
+- The *TLSOC - SOC Overview* dashboard and health monitoring, installed
+  automatically and repairable with `dashboards.sh` (with automatic retry).
+- Optional threat-intelligence collectors (AbuseIPDB, OTX, OpenPhish, MISP).
 
 ## Next Release
 
 - Ecosystem alignment: standardized documentation, community health files, and
   release tagging (this refactoring).
-- Automated first-start password initialization (remove the manual
-  `elasticsearch-reset-password` step).
-- Health-check script for the whole stack (containers, certs, ports, disk).
+- Kafka TLS/SASL on the external listener (today it is plaintext on `:9094`;
+  see the open issue).
+- Snapshot lifecycle policy for backups of retained logs.
 
 ## Future
 
 - Multi-node Elasticsearch profile (dedicated data/master layout).
 - Kafka TLS client-authentication option for onboarded servers.
-- Bundled Kibana dashboard pack for the engine's ECS output.
+- More bundled dashboards: per-source drill-downs for the engine's ECS output.
 - Automated certificate rotation.
 
 ## Long Term Vision

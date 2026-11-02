@@ -50,9 +50,9 @@ certs/
   local CA.
 - Kafka's **external** listener (`:9094`) is the only port monitored servers
   need to reach.
-- The server IP is baked into the certificates — regenerate them
-  (`./certs/generate-certs.sh <new-ip>`) and restart the stack after an IP
-  change.
+- The server IP is baked into the certificates. `install.sh` keeps a valid
+  existing set and regenerates only when the IP changed (or on first install);
+  to force it, run `./certs/generate-certs.sh <new-ip>` and restart the stack.
 - Browsers warn about the CA until you import `certs/ca/ca.crt` into the trust
   store; the connection is encrypted either way.
 
@@ -99,6 +99,32 @@ The engine also ships an **Elasticsearch index template** that types every ECS
 field correctly (dates, IPs, `geo_point`) and applies to `fosstlsoc-logs-*` —
 load it before the first event is indexed:
 [foss-soc-engine/elasticsearch](https://github.com/sankettaware16/foss-soc-engine/tree/main/elasticsearch).
+
+## Retention, templates and dashboards
+
+Set up by `install.sh` (and repairable at any time with `./dashboards.sh`) in this
+order, so nothing is indexed before it is typed and covered by a retention rule:
+
+```mermaid
+flowchart LR
+    A["Elasticsearch up"] --> B["kibana_system<br/>password set"]
+    B --> C["setup_storage.py<br/>ILM policies + templates<br/>+ base indices"]
+    C --> D["Kafka, Logstash,<br/>Kibana start"]
+    D --> E["dashboards.sh<br/>dashboard + health collector"]
+```
+
+- **Retention:** ILM policies `tlsoc-logs` (hot → warm → delete, default 180
+  days), `tlsoc-logs-highvolume` (optional shorter tier) and `tlsoc-health`,
+  driven by `.env`. Index templates layer the engine's field types, shard and
+  replica settings and the policy for `fosstlsoc-logs-*`; an optional
+  `tlsoc-logs@custom` component template is reserved for the operator. See
+  [Data retention and storage](retention-and-storage.md).
+- **Dashboards:** the *TLSOC - SOC Overview* dashboard reads four data views
+  (`fosstlsoc-logs-*`, `tlsoc-health-*`, the Security alerts index and
+  `tlsoc-threat-intel*`). Empty base indices carry the field lists so every
+  panel works before the first event. The health collector
+  (`monitoring/tlsoc_health_collector.py`, cron, every minute) writes
+  `tlsoc-health-*`. See [Dashboards and monitoring](dashboards.md).
 
 ## Kibana extras
 

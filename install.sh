@@ -28,6 +28,22 @@ fi
 
 export HOST_IP
 
+# ---- Kibana encryption key (generated once, kept stable across re-runs) ----
+command -v openssl >/dev/null || { echo "openssl missing"; exit 1; }
+ENV_KEY=$(grep "^KIBANA_ENCRYPTION_KEY=" .env | cut -d= -f2- || true)
+
+if [[ ${#ENV_KEY} -lt 32 ]]; then
+  KIBANA_ENCRYPTION_KEY=$(openssl rand -hex 32)
+  if grep -q "^KIBANA_ENCRYPTION_KEY=" .env; then
+    sed -i "s|^KIBANA_ENCRYPTION_KEY=.*|KIBANA_ENCRYPTION_KEY=$KIBANA_ENCRYPTION_KEY|" .env
+  else
+    printf '\nKIBANA_ENCRYPTION_KEY=%s\n' "$KIBANA_ENCRYPTION_KEY" >> .env
+  fi
+  echo "[+] Generated KIBANA_ENCRYPTION_KEY and saved it to .env"
+else
+  echo "[+] Using KIBANA_ENCRYPTION_KEY from .env"
+fi
+
 # ---- Generate certificates ----
 chmod +x certs/generate-certs.sh
 ./certs/generate-certs.sh "$HOST_IP"

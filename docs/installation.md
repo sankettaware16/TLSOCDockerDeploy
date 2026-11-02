@@ -52,9 +52,11 @@ sudo ./install.sh
 2. Creates `.env` from `.env.example` if missing.
 3. Auto-detects the host IP and writes it to `.env` (`HOST_IP`) — set it
    yourself in `.env` first if the machine has multiple interfaces.
-4. Generates the local CA and per-service TLS certificates
+4. Generates a random Kibana encryption key (`KIBANA_ENCRYPTION_KEY`) and
+   saves it to `.env`. An existing key is never overwritten.
+5. Generates the local CA and per-service TLS certificates
    (`certs/generate-certs.sh <ip>`).
-5. Starts the stack with `docker compose up -d`.
+6. Starts the stack with `docker compose up -d`.
 
 To regenerate certificates later (for example after an IP change), run
 `./certs/generate-certs.sh <server-ip>` and restart the stack.
@@ -137,6 +139,7 @@ Sign in as `elastic` with your `ELASTIC_PASSWORD`.
 | `ELASTIC_VERSION` | `8.19.12` | Elastic Stack image version (Elasticsearch, Kibana, Logstash) |
 | `ELASTIC_PASSWORD` | — | `elastic` superuser password (set after first-time reset) |
 | `KIBANA_PASSWORD` | — | `kibana_system` password (set after first-time reset) |
+| `KIBANA_ENCRYPTION_KEY` | auto-generated | Encrypts Kibana saved objects (alerting rules, connectors). Created by `install.sh`; keep it stable and private. The stack refuses to start if it is missing |
 | `ELASTIC_HEAP` | `1g` | Elasticsearch JVM heap size |
 | `KIBANA_PORT` | `5601` | Kibana HTTPS port |
 | `HOST_IP` | auto-detected | The server IP baked into certificates and external listeners |

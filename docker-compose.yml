@@ -36,7 +36,7 @@ services:
       - SERVER_SSL_CERTIFICATE=/usr/share/kibana/config/certs/kibana.crt
       - SERVER_SSL_KEY=/usr/share/kibana/config/certs/kibana.key
       - ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES=/usr/share/kibana/config/certs/ca.crt
-      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=9f3a8c1e5d7b4a2f6c9d8e7a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY:?KIBANA_ENCRYPTION_KEY is not set in .env - run ./install.sh}
     volumes:
       - ./certs/kibana:/usr/share/kibana/config/certs
       - ./certs/ca/ca.crt:/usr/share/kibana/config/certs/ca.crt

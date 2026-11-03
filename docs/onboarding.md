@@ -1,9 +1,14 @@
 # Onboarding Log Sources
 
 TLSOC uses an **agentless** model: Linux servers forward logs directly using
-`rsyslog` + the `omkafka` module → Kafka topic → TLSOC Engine → Logstash →
+`rsyslog` + the `omkafka` module → Kafka → TLSOC Engine → Logstash →
 Elasticsearch. Nothing custom is installed on the source machines beyond an
 rsyslog configuration.
+
+Each log source has one name (`auth`, `nginx`, `postfix`, ...) and goes to its
+own Kafka topic, `tlsoc.logs.<name>`. The engine reads every such topic and
+picks the parser by the same name, so there is **no topic to choose and nothing
+to map** — see [Log sources and Kafka topics](sources-and-topics.md).
 
 There are two ways to onboard a server. The **automated script** is the fastest
 and is recommended for most servers; the **manual method** is available for
@@ -34,12 +39,16 @@ sudo bash tlsoc-onboard.sh
 - Installs the `omkafka` module (`rsyslog-kafka`) if missing
 - Asks for the **TLSOC server IP** and tests connectivity to port `9094` before
   continuing
-- Asks for the **Kafka topic** and envelope metadata (org / dept / env / server
-  id)
+- Asks for the envelope metadata (org / dept / env / server id) — **no topic**:
+  each file goes to `tlsoc.logs.<source name>`
 - **Auto-discovers** common logs in `/var/log` (auth, kern, ufw, dpkg, apt,
-  nginx, apache, mail, fail2ban, auditd, …) and lets you keep or drop any
-- Lets you add **custom log paths** (each verified to exist and be readable
-  first)
+  nginx, apache, mail, fail2ban, suricata, auditd, …), names each with its
+  standard source name (`auth.log` → `auth`, `mail.log` → `postfix`, nginx access
+  and error logs → `nginx`), marks the ones the engine has a parser for, and
+  lets you keep or drop any
+- Lets you add **custom log paths** with a source name of your choice (each
+  verified to exist and be readable first). A source without a parser is still
+  forwarded and kept by the engine until a parser is written
 - Generates a **hardened, rotation-safe config** and validates it *before*
   restarting — so it never breaks existing logging
 - **Verifies end-to-end delivery** using a unique test marker and prints the
@@ -57,9 +66,16 @@ sudo bash tlsoc-onboard.sh
 **Non-interactive mode (for scripted rollouts):**
 
 ```bash
-TLSOC_IP=<ip> TLSOC_TOPIC=<topic> TLSOC_ORG=<org> TLSOC_DEPT=<dept> \
-TLSOC_ENV=production TLSOC_SERVERID=<id> sudo bash tlsoc-onboard.sh
+TLSOC_IP=<ip> TLSOC_ORG=<org> TLSOC_DEPT=<dept> \
+TLSOC_ENV=production TLSOC_SERVERID=<id> \
+TLSOC_EXTRA_SOURCES="/var/log/moodle.log=moodle /opt/app/app.log=myapp" \
+sudo -E bash tlsoc-onboard.sh
 ```
+
+`TLSOC_EXTRA_SOURCES` adds custom files without prompts (`path=name`, space
+separated). Older single-topic setups: `TLSOC_TOPIC=<topic>` sends every source
+to that one topic instead of `tlsoc.logs.<name>` (the engine's
+`kafka.input_topic` must then include it).
 
 ## Manual method (advanced / custom setups)
 
@@ -118,19 +134,24 @@ template(name="KafkaProxyEnvelope" type="list") {
 }
 
 #############################
+# TOPIC: one per source, tlsoc.logs.<Tag of the input>
+#############################
+template(name="TlsocTopic" type="string" string="tlsoc.logs.%programname%")
+
+#############################
 # KAFKA-ONLY RULESET
 # Every message entering this ruleset is forwarded to Kafka and
 # stopped. Only the imfile inputs below feed it, so no
-# $programname filter is needed. To send different sources to a
-# DIFFERENT topic, copy this ruleset under a new name (e.g.
-# "toKafka_auth") with its own topic, and bind inputs to it.
+# $programname filter is needed. Each message goes to the topic
+# named after its input's Tag (tlsoc.logs.nginx, ...).
 #############################
 ruleset(name="toKafka") {
   action(
     type="omkafka"
-    topic="example_logs"             # CHANGE REQUIRED → your Kafka topic name
+    topic="TlsocTopic"
+    dynaTopic="on"                   # topic name built per message from the template
+    partitions.auto="on"             # spread over all partitions (else all go to partition 0)
     broker=["<IP-TLSOC>:9094"]       # CHANGE REQUIRED → central Kafka broker IP:port
-    key="%programname%"
     template="KafkaProxyEnvelope"
     confParam=[
       "compression.codec=snappy",
@@ -153,12 +174,16 @@ ruleset(name="toKafka") {
 #                              offset, so no data is lost. Set to "off"
 #                              ONLY if you deliberately want to backfill
 #                              an existing file's full history on deploy.
-# Give every input a UNIQUE Tag — it becomes source_program in the
-# envelope AND the Kafka partition key.
+# The Tag is the SOURCE NAME: it becomes source_program in the
+# envelope, the topic tlsoc.logs.<Tag> and the index
+# fosstlsoc-logs-<Tag>-*. Use the engine's name for sources it
+# has a parser for (auth, nginx, apache, postfix, squid, dns,
+# radius, sso, suricata, modsec ...); several files may share a
+# Tag. Lowercase letters, digits, '_' and '-'.
 #############################
 input(type="imfile"
       File="/location/of/logs/tomcat.log"   # CHANGE REQUIRED → full path to log file
-      Tag="web_tomcat_logs"                 # CHANGE REQUIRED → unique tag for this source
+      Tag="tomcat"                          # CHANGE REQUIRED → source name
       Severity="info"
       Facility="local4"
       ruleset="toKafka"
@@ -166,7 +191,7 @@ input(type="imfile"
       freshStartTail="on"
       persistStateInterval="200")           # save read-offset every 200 lines (crash safety)
 
-# --- Add more sources the same way (all → same topic, distinguished by Tag) ---
+# --- Add more sources the same way (each Tag gets its own topic) ---
 #input(type="imfile"
 #      File="/var/log/nginx.log"
 #      Tag="nginx"
@@ -193,17 +218,21 @@ On the TLSOC server:
 ```bash
 cd /opt/TLSOCDockerDeploy/
 sudo docker exec -it kafka /opt/kafka/bin/kafka-console-consumer.sh \
-  --bootstrap-server kafka:9092 --topic <topic-name>
+  --bootstrap-server kafka:9092 --topic tlsoc.logs.<source>
 ```
 
-Real-time logs will be received. More topic operations:
+Real-time logs will be received. On the engine host, `python3 sources.py` shows
+every source at once (topic, rate, lag, parser). More topic operations:
 [kafka-admin.md](kafka-admin.md).
 
 ## After onboarding
 
-Each unique `Tag` you configured arrives at
-[foss-soc-engine](https://github.com/sankettaware16/foss-soc-engine) as
-`meta.source_program`. Map it to a parsing rule in the engine's
-`program_mapping` (the engine's `replicate.py` tool can auto-suggest the right
-rule from your samples) so the source is parsed into ECS events rather than
-dead-lettered.
+Each `Tag` arrives at
+[foss-soc-engine](https://github.com/sankettaware16/foss-soc-engine) on topic
+`tlsoc.logs.<Tag>` and as `meta.source_program`. A standard name is parsed by
+its rule straight away; nothing to configure. For a name without a parser, the
+engine keeps the lines in `logs/dlq/<Tag>.json` and `sources.py` shows
+**NO PARSER** — write a rule with `source: "<Tag>"` (it is picked up without a
+restart), or, if an existing rule fits a site-specific tag, map it in the
+engine's `program_mapping` (`replicate.py` can suggest the rule from your
+samples).

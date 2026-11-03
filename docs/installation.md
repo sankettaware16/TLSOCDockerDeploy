@@ -60,7 +60,9 @@ sudo ./install.sh
 5. Starts **Elasticsearch first**, sets the `kibana_system` password, and applies
    the [data retention policies and index templates](retention-and-storage.md)
    before any event can be indexed.
-6. Starts the rest of the stack (Kafka, Logstash, Kibana).
+6. Starts the rest of the stack (Kafka, Logstash, Kibana) and creates the
+   standard Kafka topics, one per log source (`tlsoc.logs.auth`,
+   `tlsoc.logs.nginx`, ...) — see [Log sources and Kafka topics](sources-and-topics.md).
 7. Imports the **SOC Overview dashboard** and, when run as root, installs the
    health collector — see [Dashboards and monitoring](dashboards.md).
 
@@ -141,6 +143,7 @@ Details and options: [Dashboards and monitoring](dashboards.md).
 | `HIGH_VOLUME_RETENTION_DAYS` | `30` | Retention for the sources above |
 | `HEALTH_RETENTION_DAYS` | `90` | Retention of self-monitoring data |
 | `INDEX_SHARDS` / `INDEX_REPLICAS` | `1` / `0` | Shards per daily index; replicas (keep `0` on this single-node stack) |
+| `KAFKA_DEFAULT_PARTITIONS` | `3` | Partitions of a source topic created automatically on first use (sources not in `kafka/topics.conf`) |
 
 How to choose these values and size the disk:
 [Data retention and storage](retention-and-storage.md).
@@ -163,7 +166,8 @@ need a decision, in particular the new default log retention of 180 days
 ## Next steps
 
 1. [Onboard log sources](onboarding.md) — start forwarding logs from your
-   servers.
+   servers. Each source gets its own topic automatically; nothing to configure
+   ([how sources and topics work](sources-and-topics.md)).
 2. Install [foss-soc-engine](https://github.com/sankettaware16/foss-soc-engine) to
    parse and normalize the forwarded logs; Logstash tails its output directory
    (`ENGINE_OUTPUT_DIR`, default `/var/log/soc_output` — see

@@ -55,6 +55,12 @@ retry) baked in and end-to-end delivery verified before it exits.
   settings fit your disk. See [Data retention and storage](docs/retention-and-storage.md).
 - **TLS everywhere** — Elasticsearch, Kibana, Logstash, and Kafka's external
   listener all speak TLS, signed by a local CA you control.
+- **Sources connect by name** — every log source has its own Kafka topic,
+  `tlsoc.logs.<source>`, created automatically; the TLSOC Engine reads them all
+  and picks the parser by the same name, and the events land in
+  `fosstlsoc-logs-<source>-*`. No topic to choose, nothing to map. A burst from
+  one source no longer delays the others. See
+  [Log sources and Kafka topics](docs/sources-and-topics.md).
 - **Agentless onboarding** — one command per monitored server; auto-discovers
   common logs (auth, kern, ufw, nginx, apache, mail, fail2ban, auditd, …), lets
   you add custom paths, validates the config before restarting rsyslog, and
@@ -141,8 +147,8 @@ curl -fsSL https://raw.githubusercontent.com/sankettaware16/TLSOCDockerDeploy/ma
 sudo bash tlsoc-onboard.sh
 ```
 
-The script asks for the TLSOC server IP and topic, auto-discovers logs, and
-verifies end-to-end delivery. Manual template and non-interactive rollout:
+The script asks for the TLSOC server IP (no topic: each source goes to
+`tlsoc.logs.<source>`), auto-discovers logs, and verifies end-to-end delivery. Manual template and non-interactive rollout:
 [docs/onboarding.md](docs/onboarding.md).
 
 ## Usage
@@ -158,10 +164,12 @@ Verify logs are arriving in Kafka:
 
 ```bash
 sudo docker exec -it kafka /opt/kafka/bin/kafka-console-consumer.sh \
-  --bootstrap-server kafka:9092 --topic <topic>
+  --bootstrap-server kafka:9092 --topic tlsoc.logs.<source>
 ```
 
-More topic operations: [docs/kafka-admin.md](docs/kafka-admin.md).
+Every source at once (topic, rate, lag, parser) — on the engine host:
+`cd /etc/foss-soc-engine && python3 sources.py`. More topic operations:
+[docs/kafka-admin.md](docs/kafka-admin.md).
 
 ## Monitoring & SOC Overview Dashboard
 
@@ -212,6 +220,9 @@ Options, the automatic retry job, and troubleshooting:
 ├── docker-compose.yml      # Kafka + Logstash + Elasticsearch + Kibana (TLS)
 ├── .env.example            # Stack configuration template (versions, passwords, IP)
 ├── tlsoc-onboard.sh        # Agentless log-source onboarding script
+├── kafka/
+│   ├── topics.conf         # Standard topics tlsoc.logs.<source> + partitions
+│   └── setup-topics.sh     # Create / upgrade them (run by install.sh, re-runnable)
 ├── certs/
 │   └── generate-certs.sh   # Local CA + per-service certificate generation
 ├── logstash/
@@ -242,8 +253,9 @@ Options, the automatic retry job, and troubleshooting:
 | [Dashboards and monitoring](docs/dashboards.md) | The SOC Overview dashboard, `dashboards.sh`, the health collector, automatic retry |
 | [Data retention and storage](docs/retention-and-storage.md) | Retention policy (CERT-In), sizing the disk, changing retention and templates |
 | [Onboarding](docs/onboarding.md) | Automated and manual log-source onboarding (rsyslog + omkafka) |
+| [Log sources and Kafka topics](docs/sources-and-topics.md) | One name per source, the per-source topics, first setup / onboarding / new parser flows, partitions |
 | [Architecture](docs/architecture.md) | Services, TLS/certificates, ports, volumes, Logstash pipeline |
-| [Kafka Admin](docs/kafka-admin.md) | Topic list/describe/watch/count cheat sheet |
+| [Kafka Admin](docs/kafka-admin.md) | Standard topics, list/describe/watch/count/lag cheat sheet |
 | [Roadmap](docs/roadmap.md) | Planned deployment work |
 
 ## TLSOC Ecosystem

@@ -7,6 +7,42 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **One Kafka topic per log source, connected by name.** Each source has one name
+  used end to end: rsyslog tag → topic `tlsoc.logs.<source>` → the TLSOC Engine
+  rule with `source: <source>` → index `fosstlsoc-logs-<source>-*`. `install.sh`
+  creates the standard topics from `kafka/topics.conf` (partitions per source:
+  6 for squid and dns, 1 for postfix, 3 otherwise) with the new, re-runnable
+  `kafka/setup-topics.sh` (`--list`, `--dry-run`; never deletes or shrinks).
+  Any other source's topic is created on its first line with
+  `KAFKA_DEFAULT_PARTITIONS` (`.env`, default 3). Guide:
+  `docs/sources-and-topics.md`.
+- `tlsoc-onboard.sh`: `TLSOC_EXTRA_SOURCES="/path/file=name ..."` adds custom files
+  without prompts.
+- Health collector: Kafka lag per topic (`kafka.max_lag_topic`,
+  `kafka.max_topic_lag`, `kafka.topics`), so the status names the source that is
+  behind.
+
+### Changed
+
+- **`tlsoc-onboard.sh` no longer asks for a topic.** Each file goes to
+  `tlsoc.logs.<source name>` (`dynaTopic`). Discovered files get the standard
+  source names the engine has parsers for (`auth.log` → `auth`, `mail.log` →
+  `postfix`, nginx access and error logs → `nginx`, plus `/var/log/secure`,
+  `/var/log/maillog`, Suricata `fast.log`), and sources without a parser are
+  marked. Several files may share a source name; names are lowercased.
+  `TLSOC_TOPIC=<topic>` keeps the old single-topic behaviour.
+- Onboarding sets `partitions.auto="on"`: without it omkafka wrote every message
+  to partition 0, so extra partitions and engine workers were never used. The
+  message key is no longer set.
+- Logstash `all.conf` maps per-worker engine files (`squid.w0.json`) to the
+  source's index (`fosstlsoc-logs-squid-*`); before, a multi-worker engine
+  produced indices such as `fosstlsoc-logs-squid.w0-*`.
+- **Upgrading:** existing onboarded servers keep sending to their topic and keep
+  working (the engine can consume both, see the engine's upgrading guide §8).
+  Re-run `tlsoc-onboard.sh` on a server to move it to per-source topics.
+
 ### Security
 
 - Removed the hardcoded Kibana `xpack.encryptedSavedObjects.encryptionKey` from

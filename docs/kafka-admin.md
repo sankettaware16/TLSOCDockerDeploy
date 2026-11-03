@@ -7,6 +7,25 @@ deployment directory:
 cd /opt/TLSOCDockerDeploy/
 ```
 
+## The TLSOC topics
+
+Each log source has its own topic, `tlsoc.logs.<source>`
+([Log sources and Kafka topics](sources-and-topics.md)). The standard ones are
+created by `install.sh` from [`kafka/topics.conf`](../kafka/topics.conf); a new
+source's topic is created automatically on its first line. Manage them with:
+
+```bash
+sudo ./kafka/setup-topics.sh            # create missing / raise partitions (safe to repeat)
+sudo ./kafka/setup-topics.sh --list     # TLSOC topics and partition counts
+sudo ./kafka/setup-topics.sh --dry-run  # show what would change
+```
+
+Per-source flow, lag and parser at a glance — on the engine host:
+
+```bash
+cd /etc/foss-soc-engine && python3 sources.py
+```
+
 ## List all topics
 
 ```bash
@@ -41,21 +60,30 @@ docker exec -it kafka /opt/kafka/bin/kafka-console-consumer.sh \
 ## Approximate message count
 
 ```bash
-docker exec -it kafka /opt/kafka/bin/kafka-run-class.sh kafka.tools.GetOffsetShell \
-  --broker-list kafka:9092 --topic <topic>
+docker exec -it kafka /opt/kafka/bin/kafka-get-offsets.sh \
+  --bootstrap-server kafka:9092 --topic <topic>
+```
+
+## Consumer lag (how far behind the engine is, per topic and partition)
+
+```bash
+docker exec -it kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server kafka:9092 --describe --group soc-parser-group
 ```
 
 ## Add partitions to a topic
 
-One partition is consumed by at most one engine worker — provision at least as
-many partitions as total workers
-(see [TLSOC Engine — Deployment & Scaling](https://github.com/sankettaware16/foss-soc-engine/blob/main/docs/deployment.md)):
+One partition is consumed by at most one engine worker, so a busy source needs
+several partitions before several workers can share it
+(see [TLSOC Engine — Deployment & Scaling](https://github.com/sankettaware16/foss-soc-engine/blob/main/docs/deployment.md)).
+Preferably raise the number in `kafka/topics.conf` and run
+`sudo ./kafka/setup-topics.sh`, so it is recorded; or directly:
 
 ```bash
 docker exec -it kafka /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server kafka:9092 --alter --topic <topic> --partitions 12
+  --bootstrap-server kafka:9092 --alter --topic tlsoc.logs.squid --partitions 12
 ```
 
-> Partitions can only be increased, never decreased. Increasing them changes
-> key→partition assignment for new messages; lines from one source still stay
-> together (same key), so stateful parsing is unaffected going forward.
+> Partitions can only be increased, never decreased. Keep **one** partition for
+> sources whose rule joins several lines of one transaction (postfix): their
+> lines must stay in order.

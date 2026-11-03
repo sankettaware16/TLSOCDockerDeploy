@@ -52,7 +52,10 @@
           "properties": {
             "consumer_group": { "type": "keyword" },
             "total_lag": { "type": "long" },
-            "partitions": { "type": "integer" }
+            "partitions": { "type": "integer" },
+            "topics": { "type": "integer" },
+            "max_lag_topic": { "type": "keyword" },
+            "max_topic_lag": { "type": "long" }
           }
         },
         "parser": {

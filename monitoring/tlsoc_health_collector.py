@@ -337,18 +337,29 @@ class Collector:
                  "--describe", "--group", group], timeout=45)
             if rc == 0 and out.strip():
                 lag_total, partitions = 0, 0
+                by_topic = {}
                 for line in out.splitlines():
                     cols = line.split()
                     # GROUP TOPIC PARTITION CURRENT-OFFSET LOG-END-OFFSET LAG ...
                     if len(cols) >= 6 and cols[0] == group:
                         partitions += 1
                         try:
-                            lag_total += int(cols[5])
+                            lag = int(cols[5])
                         except ValueError:
-                            pass
+                            continue
+                        lag_total += lag
+                        by_topic[cols[1]] = by_topic.get(cols[1], 0) + lag
                 extra["kafka"] = {"consumer_group": group,
-                                  "total_lag": lag_total, "partitions": partitions}
+                                  "total_lag": lag_total, "partitions": partitions,
+                                  "topics": len(by_topic)}
                 detail = f"lag {lag_total:,} ({partitions} partitions)"
+                if by_topic:
+                    # one topic per source: name the one furthest behind
+                    worst = max(by_topic, key=by_topic.get)
+                    extra["kafka"].update(max_lag_topic=worst,
+                                          max_topic_lag=by_topic[worst])
+                    if len(by_topic) > 1 and by_topic[worst]:
+                        detail += f", most behind: {worst} {by_topic[worst]:,}"
             else:
                 detail = f"lag check failed: {(err or out).strip()[:120]}"
         self.container_doc("kafka", dinfo, detail, **extra)

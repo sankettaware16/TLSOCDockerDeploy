@@ -132,6 +132,10 @@ python3 elasticsearch/setup_storage.py --es-url "$ES_URL"
 # ---- Start the rest of the stack ----
 docker compose up -d
 
+# ---- Kafka topics: one per log source (tlsoc.logs.<source>) ----
+chmod +x kafka/setup-topics.sh
+./kafka/setup-topics.sh --wait 180 || echo "[!] Kafka topics not created yet - run: sudo ./kafka/setup-topics.sh (new sources still create their own topic)"
+
 # ---- Dashboards + health monitoring ----
 # dashboards.sh waits for Kibana, imports the SOC Overview dashboard and (as
 # root) installs the health collector. If anything is not ready in time it
@@ -147,5 +151,6 @@ if [[ -n "$GENERATED_PASSWORD" ]]; then
 else
   echo " Password: see ELASTIC_PASSWORD in .env"
 fi
+echo " Sources:  one Kafka topic per source (tlsoc.logs.<source>); onboard servers with tlsoc-onboard.sh"
 echo " Retention: logs $(get_env LOG_RETENTION_DAYS | grep . || echo 180) days (change in .env; see docs/retention-and-storage.md)"
 echo "--------------------------------------"

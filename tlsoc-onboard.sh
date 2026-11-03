@@ -12,7 +12,9 @@
 #   What it does, with NO manual editing:
 #     1. Installs the omkafka module (rsyslog-kafka) if missing
 #     2. Asks for the TLSOC server IP  and TCP-tests port 9094 before continuing
-#     3. Asks for the Kafka topic + envelope metadata (org/dept/env/server id)
+#     3. Asks for the envelope metadata (org/dept/env/server id). There is NO
+#        topic to choose: each source goes to its own topic tlsoc.logs.<source>
+#        (auth, nginx, postfix ...), which the TLSOC engine picks up by itself
 #     4. Auto-discovers common /var/log sources (auth, kern, ufw, dpkg, apt,
 #        nginx, apache, mail, fail2ban, auditd ...), skipping binary/rotated files
 #     5. Lets you drop any auto-picked source, and add custom log paths
@@ -31,8 +33,12 @@
 #        arrival on the TLSOC server.
 #
 #   Non-interactive mode (optional): pre-set any of these env vars to skip prompts
-#     TLSOC_IP=10.0.0.5 TLSOC_TOPIC=cse_logs TLSOC_ORG=iitb TLSOC_DEPT=cse \
+#     TLSOC_IP=10.0.0.5 TLSOC_ORG=iitb TLSOC_DEPT=cse \
 #     TLSOC_ENV=production TLSOC_SERVERID=web1 bash tlsoc-onboard.sh
+#   Extra files without prompts: TLSOC_EXTRA_SOURCES="/var/log/moodle.log=moodle"
+#
+#   Older single-topic setups: TLSOC_TOPIC=<topic> sends every source to that
+#   one topic instead (the engine then needs that topic in kafka.input_topic).
 ###############################################################################
 
 set -uo pipefail
@@ -109,29 +115,39 @@ while :; do
 done
 
 # ---------- 4. topic + envelope metadata ----------
-ask "Kafka topic name"                       TLSOC_TOPIC    "${TLSOC_TOPIC:-cse_logs}"
+# One topic per source (tlsoc.logs.<source>) unless TLSOC_TOPIC forces a single
+# legacy topic. Nothing to ask: the TLSOC engine subscribes to tlsoc.logs.*.
+TLSOC_TOPIC="${TLSOC_TOPIC:-}"
+topic_for() { if [ -n "$TLSOC_TOPIC" ]; then printf '%s' "$TLSOC_TOPIC"; else printf 'tlsoc.logs.%s' "$1"; fi; }
 ask "Org identifier"                         TLSOC_ORG      "${TLSOC_ORG:-my_org}"
 ask "Department"                             TLSOC_DEPT     "${TLSOC_DEPT:-general}"
 ask "Environment (production/testing/dev)"   TLSOC_ENV      "${TLSOC_ENV:-production}"
 ask "Unique server identifier"               TLSOC_SERVERID "${TLSOC_SERVERID:-$(hostname -s)}"
 
 # ---------- 5. auto-discover candidate log sources ----------
-# format: "path|tag|description"   (tags become source_program + must be unique)
+# format: "path|source|description|parser"
+#   source = the TLSOC source name: rsyslog tag, Kafka topic tlsoc.logs.<source>,
+#            index fosstlsoc-logs-<source>-*. Several files may share a source.
+#   parser = "yes" when the TLSOC engine ships a parser for it; other sources are
+#            still forwarded and kept (engine dead-letter file) until a parser exists.
 CANDIDATES=(
-  "/var/log/auth.log|auth|SSH / sudo / logins (high value)"
-  "/var/log/kern.log|kern|Kernel messages"
-  "/var/log/ufw.log|ufw|UFW firewall"
-  "/var/log/dpkg.log|dpkg|Package install/remove"
-  "/var/log/apt/history.log|apt_history|APT command history"
-  "/var/log/fail2ban.log|fail2ban|Fail2ban bans"
-  "/var/log/nginx/access.log|nginx_access|Nginx access"
-  "/var/log/nginx/error.log|nginx_error|Nginx errors"
-  "/var/log/apache2/access.log|apache_access|Apache access"
-  "/var/log/apache2/error.log|apache_error|Apache errors"
-  "/var/log/mail.log|mail|Mail / postfix"
-  "/var/log/mysql/error.log|mysql_error|MySQL errors"
-  "/var/log/audit/audit.log|auditd|auditd (needs root read)"
-  "/var/log/syslog|syslog|Catch-all (LARGE, opt-in)"
+  "/var/log/auth.log|auth|SSH / sudo / logins (high value)|yes"
+  "/var/log/secure|auth|SSH / sudo / logins (RHEL family)|yes"
+  "/var/log/kern.log|kern|Kernel messages|"
+  "/var/log/ufw.log|ufw|UFW firewall|"
+  "/var/log/dpkg.log|dpkg|Package install/remove|"
+  "/var/log/apt/history.log|apt|APT command history|"
+  "/var/log/fail2ban.log|fail2ban|Fail2ban bans|"
+  "/var/log/nginx/access.log|nginx|Nginx access|yes"
+  "/var/log/nginx/error.log|nginx|Nginx errors|yes"
+  "/var/log/apache2/access.log|apache|Apache access|yes"
+  "/var/log/apache2/error.log|apache_error|Apache errors|"
+  "/var/log/mail.log|postfix|Mail / postfix|yes"
+  "/var/log/maillog|postfix|Mail / postfix (RHEL family)|yes"
+  "/var/log/suricata/fast.log|suricata|Suricata IDS alerts|yes"
+  "/var/log/mysql/error.log|mysql|MySQL errors|"
+  "/var/log/audit/audit.log|auditd|auditd (needs root read)|"
+  "/var/log/syslog|syslog|Catch-all (LARGE, opt-in)|"
 )
 
 is_text() { # returns 0 if file looks like text (avoid binary logs: wtmp/btmp/lastlog)
@@ -146,9 +162,10 @@ is_text() { # returns 0 if file looks like text (avoid binary logs: wtmp/btmp/la
 declare -a SEL_PATH SEL_TAG SEL_DESC
 info "Scanning /var/log for known sources ..."
 for entry in "${CANDIDATES[@]}"; do
-  p="${entry%%|*}"; rest="${entry#*|}"; t="${rest%%|*}"; d="${rest#*|}"
+  IFS='|' read -r p t d hasparser <<<"$entry"
   [ -f "$p" ] || continue
   if ! is_text "$p"; then warn "Skipping $p (binary)"; continue; fi
+  [ "$hasparser" = yes ] || d="$d  (no parser yet - kept until one is added)"
   SEL_PATH+=("$p"); SEL_TAG+=("$t"); SEL_DESC+=("$d")
 done
 
@@ -181,32 +198,45 @@ else
 fi
 
 # ---------- 6. custom paths ----------
+# Non-interactive: TLSOC_EXTRA_SOURCES="/var/log/moodle.log=moodle /opt/app/app.log=myapp"
+for pair in ${TLSOC_EXTRA_SOURCES:-}; do
+  CP="${pair%%=*}"; CT="${pair#*=}"; [ "$CT" = "$pair" ] && CT="$(basename "${CP%.*}")"
+  if [ ! -f "$CP" ]; then warn "Not found: $CP — skipped."; continue; fi
+  if ! is_text "$CP"; then warn "$CP looks binary — skipped."; continue; fi
+  sudo -u "$RSYSLOG_USER" test -r "$CP" 2>/dev/null || warn "  '$RSYSLOG_USER' cannot read $CP — fix perms or run rsyslog as root, or it won't ship."
+  SEL_PATH+=("$CP"); SEL_TAG+=("$CT")
+done
 say ""; info "Add custom log paths (press Enter on an empty prompt to finish)."
 while :; do
   CP=""; ask "Custom log path" CP ""
   [ -z "$CP" ] && break
   if [ ! -f "$CP" ]; then warn "Not found: $CP — skipped."; continue; fi
   if ! is_text "$CP"; then warn "$CP looks binary — skipped."; continue; fi
-  CT=""; ask "  Tag/source_program for $CP" CT "$(basename "${CP%.*}" | tr -cs 'A-Za-z0-9' '_' )"
+  say "  Source name = topic tlsoc.logs.<name> and index fosstlsoc-logs-<name>. Use a"
+  say "  standard name if the engine has a parser for it (auth nginx apache postfix"
+  say "  squid dns radius sso suricata modsec), otherwise any short name (e.g. moodle)."
+  CT=""; ask "  Source name for $CP" CT "$(basename "${CP%.*}" | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9_-' '_' )"
   sudo -u "$RSYSLOG_USER" test -r "$CP" 2>/dev/null || warn "  '$RSYSLOG_USER' cannot read $CP — fix perms or run rsyslog as root, or it won't ship."
   SEL_PATH+=("$CP"); SEL_TAG+=("$CT")
 done
 
-# collapse selections, ensure unique tags
-declare -a F_PATH F_TAG; declare -A SEENTAG
+# collapse selections: one input per file; several files may share a source name
+declare -a F_PATH F_TAG; declare -A SEENPATH
 for i in "${!SEL_PATH[@]}"; do
   p="${SEL_PATH[$i]}"; t="${SEL_TAG[$i]}"
   [ -z "$p" ] && continue
-  t="$(printf '%s' "$t" | tr -cs 'A-Za-z0-9_' '_' )"          # sanitize
-  base="$t"; k=2; while [ -n "${SEENTAG[$t]:-}" ]; do t="${base}_${k}"; k=$((k+1)); done
-  SEENTAG[$t]=1
+  [ -n "${SEENPATH[$p]:-}" ] && continue
+  SEENPATH[$p]=1
+  # sanitize: lowercase letters, digits, '_' and '-' (valid topic + index name)
+  t="$(printf '%s' "$t" | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9_-' '_' | sed 's/^[_-]*//; s/_*$//')"
+  [ -n "$t" ] || t="custom"
   F_PATH+=("$p"); F_TAG+=("$t")
 done
 
 [ "${#F_PATH[@]}" -gt 0 ] || die "No log sources selected. Nothing to onboard."
 
-say ""; ok "Will forward ${#F_PATH[@]} source(s) to topic '${TLSOC_TOPIC}' at ${TLSOC_IP}:9094:"
-for i in "${!F_PATH[@]}"; do printf "     %-34s  (source_program=%s)\n" "${F_PATH[$i]}" "${F_TAG[$i]}"; done
+say ""; ok "Will forward ${#F_PATH[@]} file(s) to ${TLSOC_IP}:9094:"
+for i in "${!F_PATH[@]}"; do printf "     %-34s  -> topic %s\n" "${F_PATH[$i]}" "$(topic_for "${F_TAG[$i]}")"; done
 CONFIRM=""; ask "Proceed and write config? (Y/n)" CONFIRM "Y"
 case "$CONFIRM" in n|N) die "Aborted by user.";; esac
 
@@ -216,6 +246,18 @@ if [ -f "$CONF" ]; then
 fi
 
 # ---------- 8. write hardened config ----------
+# One topic per source (topic name built from each input's Tag), or the single
+# legacy topic when TLSOC_TOPIC is set.
+if [ -n "$TLSOC_TOPIC" ]; then
+  TOPIC_TEMPLATE="# Single topic for every source (TLSOC_TOPIC was set)."
+  TOPIC_ARGS="topic=\"${TLSOC_TOPIC}\""
+else
+  TOPIC_TEMPLATE='# One Kafka topic per source: tlsoc.logs.<Tag of the input below>
+template(name="TlsocTopic" type="string" string="tlsoc.logs.%programname%")'
+  TOPIC_ARGS='topic="TlsocTopic"
+    dynaTopic="on"'
+fi
+
 # NOTE: unquoted heredoc — ${VARS} expand, and \" sequences pass through literally
 {
 cat <<RSYSLOG_HEAD
@@ -251,12 +293,17 @@ template(name="KafkaProxyEnvelope" type="list") {
   constant(value="\"}\n")
 }
 
+${TOPIC_TEMPLATE}
+
+# partitions.auto: spread messages over all partitions of the topic so several
+# engine workers can share a busy source (without it omkafka writes every
+# message to partition 0).
 ruleset(name="toKafka") {
   action(
     type="omkafka"
-    topic="${TLSOC_TOPIC}"
+    ${TOPIC_ARGS}
+    partitions.auto="on"
     broker=["${TLSOC_IP}:9094"]
-    key="%programname%"
     template="KafkaProxyEnvelope"
     confParam=[
       "compression.codec=snappy",
@@ -351,7 +398,7 @@ say "${B}FINAL CONFIRMATION — run this ONE command on the TLSOC (Docker) serve
 say ""
 say "${GRN}  cd /opt/TLSOCDockerDeploy/ && \\"
 say "  sudo docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh \\"
-say "    --bootstrap-server kafka:9092 --topic ${TLSOC_TOPIC} \\"
+say "    --bootstrap-server kafka:9092 --topic $(topic_for "${F_TAG[0]}") \\"
 say "    --from-beginning --timeout-ms 15000 2>/dev/null | grep ${MARKER}${R}"
 say ""
 say "  If that prints a line containing the marker, end-to-end delivery is CONFIRMED."
@@ -360,7 +407,10 @@ say "   reads only NEW messages and can falsely show 'nothing'.)"
 hr
 ok "Onboarding complete. Config: $CONF"
 say "  Sources forwarded:"
-for i in "${!F_PATH[@]}"; do say "    - ${F_PATH[$i]}  (source_program=${F_TAG[$i]})"; done
+for i in "${!F_PATH[@]}"; do say "    - ${F_PATH[$i]}  -> $(topic_for "${F_TAG[$i]}")"; done
+say ""
+say "  On the TLSOC server, see every source (flowing? parsed?) with:"
+say "    cd /etc/foss-soc-engine && python3 sources.py"
 say ""
 say "  To add more later: re-run this script, or add another input() block bound to"
 say "  ruleset=\"toKafka\" in $CONF and: sudo rsyslogd -N1 && sudo systemctl restart rsyslog"

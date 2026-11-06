@@ -82,11 +82,12 @@ services:
       # user once a volume is mounted over it; /var/lib/kafka/data is.
       - KAFKA_LOG_DIRS=/var/lib/kafka/data
 
-      # One topic per log source (tlsoc.logs.<source>). install.sh creates the
-      # standard ones (kafka/topics.conf); a new source's topic is created on
-      # first use with this many partitions, so onboarding needs no Kafka step.
+      # One topic per log source (tlsoc.logs.<source>), created on that source's
+      # first line with this many partitions, so only sources that really send
+      # get a topic and onboarding needs no Kafka step. kafka/setup-topics.sh
+      # (cron) then raises busy sources to their count in kafka/topics.conf.
       - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
-      - KAFKA_NUM_PARTITIONS=${KAFKA_DEFAULT_PARTITIONS:-3}
+      - KAFKA_NUM_PARTITIONS=${KAFKA_DEFAULT_PARTITIONS:-1}
 
     ports:
       - "9094:9094"   # EXTERNAL ONLY

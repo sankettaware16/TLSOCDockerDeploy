@@ -11,13 +11,16 @@ this repository adheres to [Semantic Versioning](https://semver.org/).
 
 - **One Kafka topic per log source, connected by name.** Each source has one name
   used end to end: rsyslog tag → topic `tlsoc.logs.<source>` → the TLSOC Engine
-  rule with `source: <source>` → index `fosstlsoc-logs-<source>-*`. `install.sh`
-  creates the standard topics from `kafka/topics.conf` (partitions per source:
-  6 for squid and dns, 1 for postfix, 3 otherwise) with the new, re-runnable
-  `kafka/setup-topics.sh` (`--list`, `--dry-run`; never deletes or shrinks).
-  Any other source's topic is created on its first line with
-  `KAFKA_DEFAULT_PARTITIONS` (`.env`, default 3). Guide:
-  `docs/sources-and-topics.md`.
+  rule with `source: <source>` → index `fosstlsoc-logs-<source>-*`. Topics are
+  **not** created in advance: a source's first line creates its topic with
+  `KAFKA_DEFAULT_PARTITIONS` (`.env`, default 1, safe for every parser), so Kafka
+  holds only the sources that really send, however many parsers exist.
+  `kafka/setup-topics.sh` (cron every 5 minutes, installed by `install.sh`)
+  gives existing topics the partitions/retention in `kafka/topics.conf` (6 for
+  squid and dns, 3 for other busy sources, `*` for a default); `--list`,
+  `--dry-run`, `--create <source>`, and `--remove-unused` to delete TLSOC topics
+  that never held a message (from an earlier version that created them all).
+  It never lowers partitions. Guide: `docs/sources-and-topics.md`.
 - `tlsoc-onboard.sh`: `TLSOC_EXTRA_SOURCES="/path/file=name ..."` adds custom files
   without prompts.
 - Health collector: Kafka lag per topic (`kafka.max_lag_topic`,

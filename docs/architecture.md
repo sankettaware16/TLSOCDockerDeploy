@@ -137,9 +137,9 @@ flowchart LR
 ## Data flow summary
 
 1. Monitored servers publish `{meta, raw}` JSON envelopes to Kafka (`:9094`),
-   one topic per log source: `tlsoc.logs.<source>`. `install.sh` creates the
-   standard topics ([`kafka/topics.conf`](../kafka/topics.conf)); a new source's
-   topic is created on its first line. See
+   one topic per log source: `tlsoc.logs.<source>`, created on that source's
+   first line (nothing in advance); a cron job applies the partitions/retention
+   in [`kafka/topics.conf`](../kafka/topics.conf). See
    [Log sources and Kafka topics](sources-and-topics.md).
 2. TLSOC Engine (a host service, not a container) consumes every
    `tlsoc.logs.*` topic, picks the parser by the source name, normalizes to ECS,

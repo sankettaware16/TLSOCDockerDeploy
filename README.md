@@ -221,8 +221,8 @@ Options, the automatic retry job, and troubleshooting:
 ├── .env.example            # Stack configuration template (versions, passwords, IP)
 ├── tlsoc-onboard.sh        # Agentless log-source onboarding script
 ├── kafka/
-│   ├── topics.conf         # Standard topics tlsoc.logs.<source> + partitions
-│   └── setup-topics.sh     # Create / upgrade them (run by install.sh, re-runnable)
+│   ├── topics.conf         # Partitions/retention for source topics once they exist
+│   └── setup-topics.sh     # Applies them (cron every 5 min, set up by install.sh)
 ├── certs/
 │   └── generate-certs.sh   # Local CA + per-service certificate generation
 ├── logstash/
@@ -255,7 +255,7 @@ Options, the automatic retry job, and troubleshooting:
 | [Onboarding](docs/onboarding.md) | Automated and manual log-source onboarding (rsyslog + omkafka) |
 | [Log sources and Kafka topics](docs/sources-and-topics.md) | One name per source, the per-source topics, first setup / onboarding / new parser flows, partitions |
 | [Architecture](docs/architecture.md) | Services, TLS/certificates, ports, volumes, Logstash pipeline |
-| [Kafka Admin](docs/kafka-admin.md) | Standard topics, list/describe/watch/count/lag cheat sheet |
+| [Kafka Admin](docs/kafka-admin.md) | Source topics, list/describe/watch/count/lag cheat sheet |
 | [Roadmap](docs/roadmap.md) | Planned deployment work |
 
 ## TLSOC Ecosystem

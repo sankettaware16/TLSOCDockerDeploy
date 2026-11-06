@@ -143,7 +143,7 @@ Details and options: [Dashboards and monitoring](dashboards.md).
 | `HIGH_VOLUME_RETENTION_DAYS` | `30` | Retention for the sources above |
 | `HEALTH_RETENTION_DAYS` | `90` | Retention of self-monitoring data |
 | `INDEX_SHARDS` / `INDEX_REPLICAS` | `1` / `0` | Shards per daily index; replicas (keep `0` on this single-node stack) |
-| `KAFKA_DEFAULT_PARTITIONS` | `3` | Partitions of a source topic created automatically on first use (sources not in `kafka/topics.conf`) |
+| `KAFKA_DEFAULT_PARTITIONS` | `1` | Partitions of a source topic when its first line creates it; busy sources are raised to their count in `kafka/topics.conf` |
 
 How to choose these values and size the disk:
 [Data retention and storage](retention-and-storage.md).

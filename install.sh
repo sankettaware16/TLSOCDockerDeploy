@@ -133,8 +133,10 @@ python3 elasticsearch/setup_storage.py --es-url "$ES_URL"
 docker compose up -d
 
 # ---- Kafka topics: one per log source (tlsoc.logs.<source>) ----
+# Nothing is created in advance: each source's topic appears with its first
+# line. The cron job gives busy sources their partitions (kafka/topics.conf).
 chmod +x kafka/setup-topics.sh
-./kafka/setup-topics.sh --wait 180 || echo "[!] Kafka topics not created yet - run: sudo ./kafka/setup-topics.sh (new sources still create their own topic)"
+./kafka/setup-topics.sh --wait 180 --install-cron || echo "[!] Kafka topic tuning not set up yet - run: sudo ./kafka/setup-topics.sh --install-cron (sources still create their own topics)"
 
 # ---- Dashboards + health monitoring ----
 # dashboards.sh waits for Kibana, imports the SOC Overview dashboard and (as

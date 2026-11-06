@@ -22,10 +22,10 @@ Engine subscribes to every `tlsoc.logs.*` topic, and the parser is found by name
 sudo ./install.sh                       # this repository
 ```
 
-Besides Elasticsearch, Kibana, Logstash and Kafka, the installer creates the
-standard topics listed in [`kafka/topics.conf`](../kafka/topics.conf)
-(`tlsoc.logs.auth`, `tlsoc.logs.nginx`, `tlsoc.logs.squid`, ...) with a
-partition count that suits each source. Then install the
+Besides Elasticsearch, Kibana, Logstash and Kafka, the installer sets up topic
+tuning. It creates **no** topics: each source's topic (`tlsoc.logs.squid`, ...)
+appears with that source's first line, so Kafka holds exactly the sources you
+have, not one topic per parser. Then install the
 [TLSOC Engine](https://github.com/sankettaware16/foss-soc-engine); its default
 `config.yaml` already consumes `tlsoc.logs.*`, so only the Kafka address needs
 setting. Check everything with:
@@ -34,7 +34,8 @@ setting. Check everything with:
 cd /etc/foss-soc-engine && python3 sources.py
 ```
 
-Every source shows **WAITING** until its first logs arrive.
+Until the first logs arrive there are no topics yet, and every parser is listed
+as ready and waiting for data.
 
 ### 2. Onboarding a server
 
@@ -94,31 +95,54 @@ engine's `config.yaml` → `program_mapping` (e.g. `fmlr: "policyd_spf"`).
 
 ## Topics and partitions
 
-[`kafka/topics.conf`](../kafka/topics.conf) lists the standard topics:
+Topics are made by the sources, not in advance. A source's first line creates
+`tlsoc.logs.<source>` with `KAFKA_DEFAULT_PARTITIONS` partitions (`.env`,
+default **1**). A parser whose source never sends costs nothing: no topic, no
+partitions, no files. With a thousand parsers, Kafka still holds only the
+sources you really have.
+
+[`kafka/topics.conf`](../kafka/topics.conf) holds the settings a topic gets
+**once it exists**:
 
 ```
 # source        partitions  [retention_hours]
-auth            3
 squid           6
 dns             6
-postfix         1
+nginx           3
+*               1     48     # optional: every other TLSOC topic
 ```
 
-- **Partitions** are how many engine workers can share one source. Give busy
-  sources more. Raising later is fine; Kafka can never lower it. Keep **1** for
-  sources whose rule joins several lines of one transaction (postfix).
+- **Partitions** are how many engine workers can share one source. Only busy
+  sources need more than 1. Kafka can raise it, never lower it, which is why new
+  topics start at 1: that suits every parser, including those that join several
+  lines of one transaction in order (postfix, `strategy: stateful`). Never list
+  such a source with more than 1.
 - **Retention** (optional third column, hours) is how long Kafka keeps messages
-  as a buffer while the engine is down. Default: the broker's 168 hours.
-- A source not listed gets its topic on first use with
-  `KAFKA_DEFAULT_PARTITIONS` partitions (`.env`, default 3).
+  as a buffer while the engine is down. Default: the broker's 168 hours. `*`
+  sets it for every TLSOC topic not listed.
 
-Apply changes (safe to repeat; never deletes or shrinks anything):
+`install.sh` installs a cron job (`/etc/cron.d/tlsoc-topics`, every 5 minutes)
+that applies these settings to topics that exist, so a new busy source gets its
+partitions a few minutes after its first line. It never lowers partitions and
+never creates or deletes a topic on its own. By hand:
 
 ```bash
-sudo ./kafka/setup-topics.sh             # create / upgrade
-sudo ./kafka/setup-topics.sh --dry-run   # show what would change
-sudo ./kafka/setup-topics.sh --list      # topics and partitions
+sudo ./kafka/setup-topics.sh                 # apply now (safe to repeat)
+sudo ./kafka/setup-topics.sh --dry-run       # show what would change
+sudo ./kafka/setup-topics.sh --list          # topics, partitions, retention
+sudo ./kafka/setup-topics.sh --create squid  # make a topic before its first line
 ```
+
+**Upgrading from a version that created every topic in advance:** remove the
+ones that never held a message and install the cron job:
+
+```bash
+sudo ./kafka/setup-topics.sh --remove-unused --dry-run   # list them first
+sudo ./kafka/setup-topics.sh --remove-unused --install-cron
+```
+
+A source that starts sending later simply gets its topic back. The engine
+rebalances once when topics disappear (a few seconds' pause).
 
 To use more CPU cores, raise the engine's `runtime.workers`; a worker only gets
 work if there are enough partitions to go round.

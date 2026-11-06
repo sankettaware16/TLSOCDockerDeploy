@@ -10,14 +10,16 @@ cd /opt/TLSOCDockerDeploy/
 ## The TLSOC topics
 
 Each log source has its own topic, `tlsoc.logs.<source>`
-([Log sources and Kafka topics](sources-and-topics.md)). The standard ones are
-created by `install.sh` from [`kafka/topics.conf`](../kafka/topics.conf); a new
-source's topic is created automatically on its first line. Manage them with:
+([Log sources and Kafka topics](sources-and-topics.md)). None is created in
+advance: a source's topic is created automatically on its first line, and a
+cron job gives it the partitions/retention in
+[`kafka/topics.conf`](../kafka/topics.conf). Manage them with:
 
 ```bash
-sudo ./kafka/setup-topics.sh            # create missing / raise partitions (safe to repeat)
-sudo ./kafka/setup-topics.sh --list     # TLSOC topics and partition counts
-sudo ./kafka/setup-topics.sh --dry-run  # show what would change
+sudo ./kafka/setup-topics.sh                  # apply topics.conf to existing topics (safe to repeat)
+sudo ./kafka/setup-topics.sh --list           # TLSOC topics, partitions, retention
+sudo ./kafka/setup-topics.sh --dry-run        # show what would change
+sudo ./kafka/setup-topics.sh --remove-unused  # delete TLSOC topics that never held a message
 ```
 
 Per-source flow, lag and parser at a glance — on the engine host:
@@ -76,8 +78,9 @@ docker exec -it kafka /opt/kafka/bin/kafka-consumer-groups.sh \
 One partition is consumed by at most one engine worker, so a busy source needs
 several partitions before several workers can share it
 (see [TLSOC Engine — Deployment & Scaling](https://github.com/sankettaware16/foss-soc-engine/blob/main/docs/deployment.md)).
-Preferably raise the number in `kafka/topics.conf` and run
-`sudo ./kafka/setup-topics.sh`, so it is recorded; or directly:
+Preferably raise the number in `kafka/topics.conf` (the cron job applies it
+within 5 minutes, or run `sudo ./kafka/setup-topics.sh`), so it is recorded; or
+directly:
 
 ```bash
 docker exec -it kafka /opt/kafka/bin/kafka-topics.sh \
